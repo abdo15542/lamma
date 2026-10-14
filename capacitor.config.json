@@ -1,0 +1,6 @@
+{
+  "appId": "ly.lamma.app",
+  "appName": "Lamma",
+  "webDir": "dist",
+  "server": { "androidScheme": "https" }
+}
