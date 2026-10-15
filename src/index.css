@@ -28,3 +28,10 @@ button.secondary { background: #e2e8f0; color: #0f172a; }
 .useful-btn { background: #f8fafc; color: #0f766e; border: 1px solid #99f6e4; font-weight: bold; }
 .useful-btn.active { background: #ccfbf1; }
 .logout-btn { width: auto; background: #fee2e2; color: #991b1b; }
+
+.tabs { margin-bottom: 12px; }
+.tab { background: #e2e8f0; color: #0f172a; width: auto; flex: 1; }
+.tab.active { background: #0f766e; color: #fff; }
+.comment { background: #f8fafc; border-radius: 10px; padding: 8px; margin: 6px 0; font-size: 14px; }
+.imgpost { width: 100%; border-radius: 12px; margin-top: 8px; max-height: 300px; object-fit: cover; }
+.notice { background: #ecfdf5; color: #065f46; border: 1px solid #6ee7b7; border-radius: 10px; padding: 8px; margin: 8px 0; font-size: 14px; }
