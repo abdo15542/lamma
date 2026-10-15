@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./lib/supabase";
 
-const BUILD_SHA = typeof __BUILD_SHA__ !== "undefined" ? __BUILD_SHA__ : "dev";
-
 const categories = [
   { id: "services", label: "خدمات" },
   { id: "alerts", label: "تنبيهات" },
@@ -10,6 +8,35 @@ const categories = [
   { id: "talk", label: "سوالف" },
   { id: "travel", label: "بين المدن" }
 ];
+
+const PATHS = {
+  home: "M3 10.5 12 3l9 7.5V21h-6v-6h-6v6H3z",
+  comp: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm4.5 5.5-2.2 6.3-6.3 2.2 2.2-6.3z",
+  plus: "M12 5v14M5 12h14",
+  heart: "M12 21s-7-4.6-9.5-9C.7 8.6 2.6 5 6 5c2 0 3.2 1 4 2.2C10.8 6 12 5 14 5c3.4 0 5.3 3.6 3.5 7-2.5 4.4-9.5 9-9.5 9z",
+  comment: "M21 12a8 8 0 0 1-8 8H4l1.5-3A8 8 0 1 1 21 12z",
+  send: "M22 2 11 13M22 2l-7 20-4-9-9-4z",
+  flag: "M5 3v18M5 4h12l-2 4 2 4H5",
+  user: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0 2c-4 0-8 2-8 5v2h16v-2c0-3-4-5-8-5z",
+  shield: "M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z",
+  out: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"
+};
+
+function Icon({ n, s = 24, f = false }) {
+  return (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill={f ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d={PATHS[n]} />
+    </svg>
+  );
+}
+
+function timeAgo(t) {
+  const s = (Date.now() - new Date(t)) / 1000;
+  if (s < 60) return "الآن";
+  if (s < 3600) return Math.floor(s / 60) + " د";
+  if (s < 86400) return Math.floor(s / 3600) + " س";
+  return Math.floor(s / 86400) + " يوم";
+}
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -73,30 +100,28 @@ function Auth({ cities }) {
 
   return (
     <div className="center">
-      <div className="container" style={{ maxWidth: 420 }}>
-        <div className="card">
-          <h2>لَمّة</h2>
-          <p className="muted">مجتمع محلي ليبي: خدمات، تنبيهات، سوق، سوالف، وتواصل بين المدن.</p>
-          <div className="row">
-            <button type="button" className={mode === "login" ? "" : "secondary"} onClick={() => setMode("login")}>تسجيل دخول</button>
-            <button type="button" className={mode === "register" ? "" : "secondary"} onClick={() => setMode("register")}>حساب جديد</button>
-          </div>
-          <form onSubmit={handleSubmit}>
-            <input type="email" placeholder="البريد الإلكتروني" value={email} onChange={(e) => setEmail(e.target.value)} required />
-            <input type="password" placeholder="كلمة المرور" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
-            {mode === "register" && (
-              <>
-                <input type="text" placeholder="اسم المستخدم" value={username} onChange={(e) => setUsername(e.target.value)} required minLength={3} maxLength={30} />
-                <select value={cityId} onChange={(e) => setCityId(e.target.value)} required>
-                  <option value="">اختر مدينتك</option>
-                  {cities.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
-                </select>
-              </>
-            )}
-            <button disabled={busy}>{busy ? "جاري التنفيذ..." : mode === "login" ? "دخول" : "إنشاء حساب"}</button>
-            {message && <div className="error">{message}</div>}
-          </form>
+      <div className="authcard">
+        <h2>لَمّة</h2>
+        <p className="muted" style={{ textAlign: "center" }}>مجتمع مدينتك في ليبيا</p>
+        <div className="chips" style={{ justifyContent: "center" }}>
+          <button className={mode === "login" ? "on" : ""} onClick={() => setMode("login")}>تسجيل دخول</button>
+          <button className={mode === "register" ? "on" : ""} onClick={() => setMode("register")}>حساب جديد</button>
         </div>
+        <form onSubmit={handleSubmit}>
+          <input type="email" placeholder="البريد الإلكتروني" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <input type="password" placeholder="كلمة المرور" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} style={{ marginTop: 8 }} />
+          {mode === "register" && (
+            <>
+              <input type="text" placeholder="اسم المستخدم" value={username} onChange={(e) => setUsername(e.target.value)} required minLength={3} maxLength={30} style={{ marginTop: 8 }} />
+              <select value={cityId} onChange={(e) => setCityId(e.target.value)} required style={{ marginTop: 8 }}>
+                <option value="">اختر مدينتك</option>
+                {cities.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
+              </select>
+            </>
+          )}
+          <button className="btn1" disabled={busy}>{busy ? "لحظة..." : mode === "login" ? "دخول" : "إنشاء حساب"}</button>
+          {message && <div className="error">{message}</div>}
+        </form>
       </div>
     </div>
   );
@@ -115,62 +140,115 @@ function SetupProfile({ user, cities, onDone }) {
   }
   return (
     <div className="center">
-      <div className="container" style={{ maxWidth: 420 }}>
-        <div className="card">
-          <h2>أكمل ملفك الشخصي</h2>
-          <form onSubmit={save}>
-            <input type="text" placeholder="اسم المستخدم" value={username} onChange={(e) => setUsername(e.target.value)} required minLength={3} maxLength={30} />
-            <select value={cityId} onChange={(e) => setCityId(e.target.value)} required>
-              <option value="">اختر مدينتك</option>
-              {cities.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
-            </select>
-            <button disabled={busy}>{busy ? "جاري الحفظ..." : "حفظ"}</button>
-            {message && <div className="error">{message}</div>}
-          </form>
-        </div>
+      <div className="authcard">
+        <h2>أكمل ملفك</h2>
+        <form onSubmit={save}>
+          <input type="text" placeholder="اسم المستخدم" value={username} onChange={(e) => setUsername(e.target.value)} required minLength={3} maxLength={30} />
+          <select value={cityId} onChange={(e) => setCityId(e.target.value)} required style={{ marginTop: 8 }}>
+            <option value="">اختر مدينتك</option>
+            {cities.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
+          </select>
+          <button className="btn1" disabled={busy}>{busy ? "لحظة..." : "حفظ"}</button>
+          {message && <div className="error">{message}</div>}
+        </form>
       </div>
     </div>
   );
 }
 
 
+function Sheet({ title, onClose, children }) {
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="shandle" />
+        <div className="shead"><b>{title}</b><button className="ibtn" onClick={onClose}>✕</button></div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, onReport, city, cat }) {
+  const [boom, setBoom] = useState(false);
+  function dbl() {
+    if (!voted) onLike(post.id);
+    setBoom(true);
+    setTimeout(() => setBoom(false), 800);
+  }
+  return (
+    <article className="post">
+      <div className="phead">
+        <span className="ava sm">{(post.profiles?.username || "؟")[0]}</span>
+        <div className="pwho">
+          <b>@{post.profiles?.username}</b>
+          <span>{city(post.city_id)} • {timeAgo(post.created_at)}</span>
+        </div>
+        <span className="badge2">{cat(post.category)}</span>
+      </div>
+      {post.image_url && (
+        <div className="pimg" onDoubleClick={dbl}>
+          <img src={post.image_url} alt="" />
+          {boom && <span className="boom">♥</span>}
+        </div>
+      )}
+      <div className="pacts">
+        <button className={"ibtn " + (voted ? "liked" : "")} onClick={() => onLike(post.id)}><Icon n="heart" f={voted} /></button>
+        <button className="ibtn" onClick={onComments}><Icon n="comment" /></button>
+        <button className="ibtn" onClick={onShare}><Icon n="send" /></button>
+        <span className="sp" />
+        <button className="ibtn" onClick={onReport}><Icon n="flag" /></button>
+      </div>
+      <div className="pcap">
+        <b>{useful} مفيد</b> · <b>@{post.profiles?.username}</b> {post.title} — {post.body}
+        {comments > 0 && <div className="muted">عرض كل التعليقات ({comments})</div>}
+      </div>
+    </article>
+  );
+}
+
 function Feed({ profile, cities }) {
-  const [tab, setTab] = useState("city");
+  const [tab, setTab] = useState("home");
   const [selectedCityId, setSelectedCityId] = useState(profile.city_id);
   const [posts, setPosts] = useState([]);
   const [votedIds, setVotedIds] = useState(new Set());
   const [follows, setFollows] = useState([]);
+  const [sheet, setSheet] = useState(null);
+  const [notice, setNotice] = useState("");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [category, setCategory] = useState("services");
   const [imageFile, setImageFile] = useState(null);
+  const [imgPrev, setImgPrev] = useState(null);
   const [message, setMessage] = useState("");
-  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
-  const [commentsMap, setCommentsMap] = useState({});
-  const [commentText, setCommentText] = useState({});
-  const [openComments, setOpenComments] = useState({});
-  const [reportingId, setReportingId] = useState(null);
-  const [reportReason, setReportReason] = useState("");
+  const [cList, setCList] = useState([]);
+  const [cText, setCText] = useState("");
+  const [rText, setRText] = useState("");
 
   useEffect(() => { loadFollows(); }, []);
-  useEffect(() => { if (tab === "city") loadPosts(); }, [selectedCityId, tab]);
+  useEffect(() => { if (tab === "home" || tab === "follows") loadPosts(); }, [selectedCityId, tab, follows]);
+  useEffect(() => { if (sheet && sheet.type === "comments") loadComments(sheet.post.id); }, [sheet]);
 
   async function loadFollows() {
     const { data } = await supabase.from("city_follows").select("city_id").eq("user_id", profile.id);
     setFollows((data || []).map((x) => x.city_id));
   }
   async function loadPosts() {
-    const { data, error } = await supabase
-      .from("posts")
-      .select("*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)")
-      .eq("city_id", selectedCityId)
-      .order("created_at", { ascending: false })
-      .limit(100);
+    const sel = "*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)";
+    let q = supabase.from("posts").select(sel).order("created_at", { ascending: false }).limit(100);
+    if (tab === "home") q = q.eq("city_id", selectedCityId);
+    else if (tab === "follows") q = follows.length ? q.in("city_id", follows) : null;
+    if (!q) { setPosts([]); return; }
+    const { data, error } = await q;
     if (error) setMessage("خطأ جلب: " + error.message);
     else setPosts(data || []);
     const { data: v } = await supabase.from("useful_votes").select("post_id").eq("user_id", profile.id);
     setVotedIds(new Set((v || []).map((x) => x.post_id)));
+  }
+  async function loadComments(postId) {
+    const { data } = await supabase.from("comments").select("*, profiles!comments_user_id_fkey(username)").eq("post_id", postId).order("created_at", { ascending: true });
+    setCList(data || []);
   }
   async function toggleFollow(cityId) {
     if (follows.includes(cityId)) {
@@ -181,8 +259,13 @@ function Feed({ profile, cities }) {
     }
     loadFollows();
   }
-  async function createPost(e) {
-    e.preventDefault(); setBusy(true); setMessage("");
+  function pickImage(f) {
+    setImageFile(f);
+    if (f) { const r = new FileReader(); r.onload = () => setImgPrev(r.result); r.readAsDataURL(f); }
+    else setImgPrev(null);
+  }
+  async function createPost() {
+    setBusy(true); setMessage("");
     let imageUrl = null;
     if (imageFile) {
       const path = profile.id + "/" + Date.now() + "_" + imageFile.name.replace(/[^a-zA-Z0-9.]/g, "_");
@@ -190,11 +273,12 @@ function Feed({ profile, cities }) {
       if (ue) { setMessage("فشل رفع الصورة: " + ue.message); setBusy(false); return; }
       imageUrl = supabase.storage.from("post-images").getPublicUrl(path).data.publicUrl;
     }
-    const { error } = await supabase.from("posts").insert({
-      user_id: profile.id, city_id: selectedCityId, category, title, body, image_url: imageUrl
-    });
+    const { error } = await supabase.from("posts").insert({ user_id: profile.id, city_id: selectedCityId, category, title, body, image_url: imageUrl });
     if (error) setMessage("خطأ نشر: " + error.message);
-    else { setTitle(""); setBody(""); setImageFile(null); setNotice("تم النشر بنجاح ✅"); loadPosts(); }
+    else {
+      setTitle(""); setBody(""); setImageFile(null); setImgPrev(null);
+      setSheet(null); setNotice("تم النشر بنجاح ✅"); loadPosts();
+    }
     setBusy(false);
   }
   async function toggleUseful(postId) {
@@ -207,41 +291,23 @@ function Feed({ profile, cities }) {
     }
     loadPosts();
   }
-  async function toggleComments(postId) {
-    if (openComments[postId]) { setOpenComments((m) => ({ ...m, [postId]: false })); return; }
-    setOpenComments((m) => ({ ...m, [postId]: true }));
-    const { data } = await supabase.from("comments").select("*, profiles!comments_user_id_fkey(username)").eq("post_id", postId).order("created_at", { ascending: true });
-    setCommentsMap((m) => ({ ...m, [postId]: data || [] }));
-  }
   async function addComment(postId) {
-    const text = (commentText[postId] || "").trim();
+    const text = cText.trim();
     if (!text) return;
     await supabase.from("comments").insert({ post_id: postId, user_id: profile.id, body: text });
-    setCommentText((m) => ({ ...m, [postId]: "" }));
-    const { data } = await supabase.from("comments").select("*, profiles!comments_user_id_fkey(username)").eq("post_id", postId).order("created_at", { ascending: true });
-    setCommentsMap((m) => ({ ...m, [postId]: data || [] }));
+    setCText("");
+    loadComments(postId);
     loadPosts();
   }
   async function sendReport(postId) {
-    if (!reportReason.trim()) return;
-    await supabase.from("reports").insert({ post_id: postId, user_id: profile.id, reason: reportReason.trim() });
-    setReportingId(null); setReportReason(""); setNotice("تم إرسال البلاغ إلى الإدارة ✔");
+    if (!rText.trim()) return;
+    await supabase.from("reports").insert({ post_id: postId, user_id: profile.id, reason: rText.trim() });
+    setRText(""); setSheet(null); setNotice("تم إرسال البلاغ إلى الإدارة ✔");
   }
   async function sharePost(post) {
-    const text =
-      "📱 لَمّة | " + categoryLabel(post.category) + "\n" +
-      "🏙 المدينة: " + cityName(post.city_id) + "\n" +
-      "📌 " + post.title + "\n" +
-      "📝 " + post.body + "\n" +
-      "— بواسطة @" + (post.profiles?.username || "") + "\n" +
-      "👍 مفيد: " + usefulCount(post);
-    try {
-      if (navigator.share) { await navigator.share({ text }); return; }
-    } catch (e) {}
-    try {
-      await navigator.clipboard.writeText(text);
-      setNotice("تم نسخ بطاقة المنشور ✔ الصقها في واتساب أو فيسبوك");
-    } catch (e) { setNotice(text); }
+    const text = "📱 لَمّة | " + categoryLabel(post.category) + "\n🏙 " + cityName(post.city_id) + "\n📌 " + post.title + "\n📝 " + post.body + "\n— @" + (post.profiles?.username || "") + "\n👍 " + usefulCount(post);
+    try { if (navigator.share) { await navigator.share({ text }); return; } } catch (e) {}
+    try { await navigator.clipboard.writeText(text); setNotice("تم نسخ بطاقة المنشور ✔ الصقها في واتساب"); } catch (e) { setNotice(text); }
   }
   async function logout() { await supabase.auth.signOut(); }
   function cityName(id) { return cities.find((c) => c.id === Number(id))?.name || ""; }
@@ -249,110 +315,120 @@ function Feed({ profile, cities }) {
   function usefulCount(p) { return p.useful_votes?.[0]?.count || 0; }
   function commentCount(p) { return p.comments?.[0]?.count || 0; }
 
-  return (
-    <div className="container">
-      <div className="topbar">
-        <div>
-          <h2 style={{ margin: 0 }}>لَمّة</h2>
-          <div className="muted">مرحبًا @{profile.username}{profile.is_admin ? " 👑" : ""}</div>
-        </div>
-        <button className="logout-btn" onClick={logout}>خروج</button>
-      </div>
+  const cardProps = (p) => ({
+    post: p, voted: votedIds.has(p.id), useful: usefulCount(p), comments: commentCount(p),
+    onLike: toggleUseful, onComments: () => setSheet({ type: "comments", post: p }),
+    onShare: () => sharePost(p), onReport: () => setSheet({ type: "report", post: p }),
+    city: cityName, cat: categoryLabel
+  });
 
-      <div className="row tabs">
-        <button className={tab === "city" ? "tab active" : "tab"} onClick={() => setTab("city")}>المدينة</button>
-        <button className={tab === "pulse" ? "tab active" : "tab"} onClick={() => setTab("pulse")}>نبض المدن</button>
-        <button className={tab === "follows" ? "tab active" : "tab"} onClick={() => setTab("follows")}>أتابعها</button>
-        {profile.is_admin && <button className={tab === "admin" ? "tab active" : "tab"} onClick={() => setTab("admin")}>الإدارة</button>}
-        <button className={tab === "about" ? "tab active" : "tab"} onClick={() => setTab("about")}>عن التطبيق</button>
-      </div>
+  return (
+    <div className="app">
+      <header className="topbar2">
+        <div className="logo">لَمّة</div>
+        <div style={{ display: "flex", gap: 6 }}>
+          {profile.is_admin && <button className="ibtn" onClick={() => setTab("admin")}><Icon n="shield" /></button>}
+          <button className="ibtn" onClick={logout}><Icon n="out" /></button>
+        </div>
+      </header>
 
       {notice && <div className="notice">{notice}</div>}
-      <UpdateNotice />
 
-      {tab === "city" && (
+      {tab === "home" && (
         <>
-          <div className="card">
-            <label>المدينة</label>
-            <select value={selectedCityId} onChange={(e) => setSelectedCityId(Number(e.target.value))}>
-              {cities.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
-            </select>
-            <div className="muted">أنت الآن تشاهد منشورات مدينة: {cityName(selectedCityId)}</div>
+          <div className="stories">
+            {cities.map((c) => (
+              <button key={c.id} className={"story " + (c.id === selectedCityId ? "on" : "")} onClick={() => setSelectedCityId(c.id)}>
+                <span className="ring"><span className="ava">{c.name[0]}</span></span>
+                <span className="sname">{c.name}</span>
+              </button>
+            ))}
+          </div>
+          <div className="cityline">
+            <b>منشورات {cityName(selectedCityId)}</b>
             {selectedCityId !== profile.city_id && (
-              <button className="secondary" onClick={() => toggleFollow(selectedCityId)}>
-                {follows.includes(selectedCityId) ? "إلغاء متابعة هذه المدينة" : "➕ متابعة هذه المدينة (متبقي " + (2 - follows.length) + ")"}
+              <button className="chip" onClick={() => toggleFollow(selectedCityId)}>
+                {follows.includes(selectedCityId) ? "✓ متابَعة" : "+ متابعة"}
               </button>
             )}
           </div>
-
-          <div className="card">
-            <h3>أضف منشورًا</h3>
-            <form onSubmit={createPost}>
-              <select value={category} onChange={(e) => setCategory(e.target.value)}>
-                {categories.map((i) => (<option key={i.id} value={i.id}>{i.label}</option>))}
-              </select>
-              <input type="text" placeholder="العنوان" value={title} onChange={(e) => setTitle(e.target.value)} required maxLength={120} />
-              <textarea placeholder="اكتب التفاصيل..." value={body} onChange={(e) => setBody(e.target.value)} required maxLength={1000} />
-              <input type="file" accept="image/*" onChange={(e) => setImageFile(e.target.files[0] || null)} />
-              <button disabled={busy || !title || !body}>{busy ? "جاري النشر..." : "نشر"}</button>
-              {message && <div className="error">{message}</div>}
-            </form>
-          </div>
-
-          {posts.length === 0 && <div className="card">لا توجد منشورات بعد في هذه المدينة.</div>}
-
-          {posts.map((post) => (
-            <div className="card" key={post.id}>
-              <div className="post-title">{post.title}</div>
-              <div className="post-body">{post.body}</div>
-              {post.image_url && <img className="imgpost" src={post.image_url} alt="" />}
-              <div className="post-meta">
-                <span className="badge">{categoryLabel(post.category)}</span>
-                <span className="badge">{cityName(post.city_id)}</span>
-                <span className="badge">@{post.profiles?.username}</span>
-                <span className="badge">{new Date(post.created_at).toLocaleString("ar-LY")}</span>
-              </div>
-              <div className="row" style={{ marginTop: 10 }}>
-                <button className={"useful-btn " + (votedIds.has(post.id) ? "active" : "")} onClick={() => toggleUseful(post.id)}>
-                  {votedIds.has(post.id) ? "مفيد ✓" : "مفيد"} ({usefulCount(post)})
-                </button>
-                <button className="useful-btn" onClick={() => toggleComments(post.id)}>💬 ({commentCount(post)})</button>
-                <button className="useful-btn" onClick={() => sharePost(post)}>📤 مشاركة</button>
-                <button className="useful-btn" onClick={() => { setReportingId(post.id); setReportReason(""); }}>🚨 بلاغ</button>
-              </div>
-              {reportingId === post.id && (
-                <div className="row">
-                  <input placeholder="سبب البلاغ" value={reportReason} onChange={(e) => setReportReason(e.target.value)} />
-                  <button onClick={() => sendReport(post.id)}>إرسال</button>
-                  <button className="secondary" onClick={() => setReportingId(null)}>إلغاء</button>
-                </div>
-              )}
-              {openComments[post.id] && (
-                <div>
-                  {(commentsMap[post.id] || []).map((c) => (
-                    <div className="comment" key={c.id}><b>@{c.profiles?.username}</b> : {c.body}</div>
-                  ))}
-                  <div className="row">
-                    <input placeholder="اكتب تعليقًا" value={commentText[post.id] || ""} onChange={(e) => setCommentText((m) => ({ ...m, [post.id]: e.target.value }))} />
-                    <button onClick={() => addComment(post.id)}>تعليق</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
+          {posts.length === 0 && <div className="empty">لا منشورات بعد في {cityName(selectedCityId)}.<br />كن أول من ينشر!</div>}
+          {posts.map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
         </>
       )}
 
-      {tab === "pulse" && <Pulse profile={profile} cities={cities} />}
-      {tab === "follows" && <Follows follows={follows} cities={cities} />}
+      {tab === "pulse" && <Pulse profile={profile} cities={cities} onOpen={(p) => setSheet({ type: "post", post: p })} />}
+      {tab === "follows" && (
+        <>
+          {follows.length === 0 && <div className="empty">لم تتابع أي مدينة بعد.<br />من تبويب المدينة اضغط "+ متابعة".</div>}
+          {posts.map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
+        </>
+      )}
       {tab === "admin" && profile.is_admin && <Admin />}
-      {tab === "about" && <About />}
+      {tab === "me" && <Me profile={profile} cities={cities} onInvite={shareApp} />}
+
+      <nav className="bottom">
+        <button className={tab === "home" ? "on" : ""} onClick={() => setTab("home")}><Icon n="home" /></button>
+        <button className={tab === "pulse" ? "on" : ""} onClick={() => setTab("pulse")}><Icon n="comp" /></button>
+        <button className="addbtn" onClick={() => setSheet({ type: "compose" })}><Icon n="plus" /></button>
+        <button className={tab === "follows" ? "on" : ""} onClick={() => setTab("follows")}><Icon n="heart" /></button>
+        <button className={tab === "me" ? "on" : ""} onClick={() => setTab("me")}><Icon n="user" /></button>
+      </nav>
+
+      {sheet && sheet.type === "compose" && (
+        <Sheet title="منشور جديد" onClose={() => setSheet(null)}>
+          <div className="chips">{categories.map((c) => (<button key={c.id} className={category === c.id ? "on" : ""} onClick={() => setCategory(c.id)}>{c.label}</button>))}</div>
+          <input placeholder="العنوان" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} />
+          <textarea placeholder="اكتب التفاصيل..." value={body} onChange={(e) => setBody(e.target.value)} maxLength={1000} style={{ marginTop: 8 }} />
+          <input type="file" accept="image/*" onChange={(e) => pickImage(e.target.files[0] || null)} style={{ marginTop: 8 }} />
+          {imgPrev && <img className="imgprev" src={imgPrev} alt="" />}
+          <div className="muted">سيُنشر في: {cityName(selectedCityId)}</div>
+          <button className="btn1" disabled={busy || !title || !body} onClick={createPost}>نشر</button>
+          {message && <div className="error">{message}</div>}
+        </Sheet>
+      )}
+
+      {sheet && sheet.type === "comments" && (
+        <Sheet title={"التعليقات (" + cList.length + ")"} onClose={() => setSheet(null)}>
+          {cList.map((c) => (
+            <div className="comment" key={c.id}>
+              <span className="ava sm">{(c.profiles?.username || "؟")[0]}</span>
+              <div><b>@{c.profiles?.username}</b> {c.body}</div>
+            </div>
+          ))}
+          {cList.length === 0 && <div className="empty">لا تعليقات بعد. كن أول من يعلّق!</div>}
+          <div className="crow">
+            <input placeholder="أضف تعليقًا..." value={cText} onChange={(e) => setCText(e.target.value)} />
+            <button onClick={() => addComment(sheet.post.id)}>إرسال</button>
+          </div>
+        </Sheet>
+      )}
+
+      {sheet && sheet.type === "report" && (
+        <Sheet title="إبلاغ عن المنشور" onClose={() => setSheet(null)}>
+          <input placeholder="سبب البلاغ" value={rText} onChange={(e) => setRText(e.target.value)} />
+          <button className="btn1" onClick={() => sendReport(sheet.post.id)}>إرسال البلاغ</button>
+          <button className="btn2" onClick={() => setSheet(null)}>إلغاء</button>
+        </Sheet>
+      )}
+
+      {sheet && sheet.type === "post" && (
+        <Sheet title="منشور" onClose={() => setSheet(null)}>
+          <PostCard {...cardProps(sheet.post)} />
+        </Sheet>
+      )}
     </div>
   );
 }
 
+async function shareApp() {
+  const text = "📱 انضم إلى تطبيق لَمّة - مجتمع مدينتك في ليبيا:\nhttps://github.com/abdo15542/lamma/releases";
+  try { if (navigator.share) { await navigator.share({ text }); return; } } catch (e) {}
+  try { await navigator.clipboard.writeText(text); } catch (e) {}
+}
 
-function Pulse({ profile, cities }) {
+
+function Pulse({ profile, cities, onOpen }) {
   const [items, setItems] = useState([]);
   useEffect(() => { load(); }, []);
   async function load() {
@@ -364,59 +440,22 @@ function Pulse({ profile, cities }) {
       .map((p) => ({ ...p, vc: p.useful_votes?.[0]?.count || 0 }))
       .filter((p) => p.vc > 0 && p.city_id !== profile.city_id)
       .sort((a, b) => b.vc - a.vc)
-      .slice(0, 10);
+      .slice(0, 30);
     setItems(list);
   }
   function cityName(id) { return cities.find((c) => c.id === Number(id))?.name || ""; }
   return (
     <div>
-      <div className="card"><h3>🔥 نبض المدن</h3><div className="muted">أكثر المنشورات فائدة في المدن الأخرى (غير مدينتك)</div></div>
-      {items.length === 0 && <div className="card">لا يوجد نبض بعد. كن أول من يصنع نبضًا!</div>}
-      {items.map((p) => (
-        <div className="card" key={p.id}>
-          <div className="post-title">{p.title}</div>
-          <div className="post-body">{p.body}</div>
-          {p.image_url && <img className="imgpost" src={p.image_url} alt="" />}
-          <div className="post-meta">
-            <span className="badge"> {cityName(p.city_id)}</span>
-            <span className="badge">@{p.profiles?.username}</span>
-            <span className="badge">👍 {p.vc}</span>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function Follows({ follows, cities }) {
-  const [items, setItems] = useState([]);
-  useEffect(() => { if (follows.length) load(); else setItems([]); }, [follows]);
-  async function load() {
-    const { data } = await supabase
-      .from("posts")
-      .select("*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count)")
-      .in("city_id", follows)
-      .order("created_at", { ascending: false }).limit(50);
-    setItems(data || []);
-  }
-  function cityName(id) { return cities.find((c) => c.id === Number(id))?.name || ""; }
-  if (follows.length === 0) return <div className="card">لم تتابع أي مدينة بعد. افتح تبويب "المدينة" واختر مدينة ثم اضغط "متابعة".</div>;
-  return (
-    <div>
-      <div className="card"><h3>🏙 مدن أتابعها</h3></div>
-      {items.length === 0 && <div className="card">لا منشورات في مدنك المتابَعة بعد.</div>}
-      {items.map((p) => (
-        <div className="card" key={p.id}>
-          <div className="post-title">{p.title}</div>
-          <div className="post-body">{p.body}</div>
-          {p.image_url && <img className="imgpost" src={p.image_url} alt="" />}
-          <div className="post-meta">
-            <span className="badge">🏙 {cityName(p.city_id)}</span>
-            <span className="badge">@{p.profiles?.username}</span>
-            <span className="badge">👍 {p.useful_votes?.[0]?.count || 0}</span>
-          </div>
-        </div>
-      ))}
+      <div className="cityline"><b>🔥 نبض المدن</b><span className="muted">الأكثر فائدة خارج مدينتك</span></div>
+      {items.length === 0 && <div className="empty">لا يوجد نبض بعد.</div>}
+      <div className="grid3">
+        {items.map((p) => (
+          <button key={p.id} className="gcell" onClick={() => onOpen(p)}>
+            {p.image_url ? <img src={p.image_url} alt="" /> : <span className="gtxt">{p.title}</span>}
+            {p.image_url && <span className="gtxt">♥ {p.vc}</span>}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -426,106 +465,61 @@ function Admin() {
   const [confirmId, setConfirmId] = useState(null);
   useEffect(() => { load(); }, []);
   async function load() {
-    const { data } = await supabase
-      .from("reports")
-      .select("*, posts(title, body), profiles!reports_user_id_fkey(username)")
-      .order("created_at", { ascending: false });
+    const { data } = await supabase.from("reports").select("*, posts(title, body), profiles!reports_user_id_fkey(username)").order("created_at", { ascending: false });
     setReports(data || []);
   }
-  async function deletePost(postId) {
-    await supabase.from("posts").delete().eq("id", postId);
-    setConfirmId(null);
-    load();
-  }
-  async function dismiss(reportId) {
-    await supabase.from("reports").delete().eq("id", reportId);
-    load();
-  }
+  async function deletePost(postId) { await supabase.from("posts").delete().eq("id", postId); setConfirmId(null); load(); }
+  async function dismiss(id) { await supabase.from("reports").delete().eq("id", id); load(); }
   return (
     <div>
-      <div className="card"><h3>👑 لوحة الإدارة</h3><div className="muted">البلاغات الواردة من المستخدمين</div></div>
-      {reports.length === 0 && <div className="card">لا توجد بلاغات. المجتمع نظيف ✔</div>}
+      <div className="cityline"><b>👑 لوحة الإدارة</b><span className="muted">{reports.length} بلاغ</span></div>
+      {reports.length === 0 && <div className="empty">لا بلاغات. المجتمع نظيف ✔</div>}
       {reports.map((r) => (
-        <div className="card" key={r.id}>
-          <div className="badge">🚨 سبب البلاغ: {r.reason}</div>
-          <div className="post-title" style={{ marginTop: 8 }}>{r.posts?.title || "(منشور محذوف)"}</div>
-          <div className="post-body">{r.posts?.body}</div>
-          <div className="post-meta"><span className="badge">المبلِّغ: @{r.profiles?.username}</span></div>
-          {r.posts && (
-            <div className="row" style={{ marginTop: 10 }}>
-              {confirmId === r.post_id ? (
-                <button onClick={() => deletePost(r.post_id)}>⚠️ تأكيد حذف المنشور نهائيًا</button>
-              ) : (
-                <button onClick={() => setConfirmId(r.post_id)}>🗑 حذف المنشور</button>
-              )}
-            </div>
-          )}
-          <div className="row"><button className="secondary" onClick={() => dismiss(r.id)}>تجاهل البلاغ</button></div>
+        <div className="card2" key={r.id}>
+          <span className="badge2">🚨 {r.reason}</span>
+          <div className="pcap" style={{ padding: "8px 0 0" }}><b>{r.posts?.title || "(محذوف)"}</b> {r.posts?.body}</div>
+          <div className="muted">المبلِّغ: @{r.profiles?.username}</div>
+          {r.posts && (confirmId === r.post_id
+            ? <button className="btn1" onClick={() => deletePost(r.post_id)}>⚠️ تأكيد الحذف نهائيًا</button>
+            : <button className="btn2" onClick={() => setConfirmId(r.post_id)}>🗑 حذف المنشور</button>)}
+          <button className="btn2" onClick={() => dismiss(r.id)}>تجاهل البلاغ</button>
         </div>
       ))}
     </div>
   );
 }
 
-
-function About() {
+function Me({ profile, cities, onInvite }) {
   const [copied, setCopied] = useState(false);
-  async function invite() {
-    const text = "📱 انضم إلى تطبيق لَمّة - مجتمع مدينتك في ليبيا:\nhttps://github.com/abdo15542/lamma/releases";
-    try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 3000); } catch (e) {}
-  }
+  function cityName(id) { return cities.find((c) => c.id === Number(id))?.name || ""; }
+  async function invite() { await onInvite(); setCopied(true); setTimeout(() => setCopied(false), 2500); }
   return (
     <div>
-      <div className="card">
-        <h3>عن لَمّة</h3>
-        <p className="post-body">لَمّة شبكة اجتماعية ليبية بسيطة تجمع أهل المدينة الواحدة: خدمات، تنبيهات، سوق، سوالف، وتواصل بين المدن. بدون إعلانات مزعجة وبدون خوارزميات معقدة.</p>
-        <div className="badge">الإصدار 1.2</div>
+      <div className="mehead">
+        <span className="ava">{(profile.username || "؟")[0]}</span>
+        <b style={{ fontSize: 18 }}>@{profile.username} {profile.is_admin ? "👑" : ""}</b>
+        <span className="muted">{cityName(profile.city_id)}</span>
       </div>
-      <div className="card">
+      <div className="stats">
+        <span>ليبي 100%</span><span>بدون إعلانات</span><span>مجتمع حقيقي</span>
+      </div>
+      <div className="card2">
+        <h3>عن لَمّة</h3>
+        <p className="muted">شبكة اجتماعية ليبية بسيطة تجمع أهل المدينة الواحدة: خدمات، تنبيهات، سوق، سوالف، وتواصل بين المدن.</p>
+        <span className="badge2">الإصدار 2.0 — تصميم جديد</span>
+      </div>
+      <div className="card2">
         <h3>شروط الاستخدام</h3>
-        <ul className="post-body" style={{ paddingRight: 18 }}>
+        <ul>
           <li>الاحترام أولًا: لا سبّ ولا قذف ولا خطاب كراهية.</li>
           <li>لا لنشر الشائعات: تحقق قبل نشر أي خبر خدمي أو أمني.</li>
           <li>المنشورات مسؤولية أصحابها، وللإدارة حذف أي محتوى مخالف.</li>
           <li>البلاغات سرية وتراجعها الإدارة فقط.</li>
-          <li>يُمنع الإعلان التجاري المكرر خارج تصنيف "سوق".</li>
         </ul>
       </div>
-      <div className="card">
-        <h3>ادعُ جيرانك</h3>
-        <button onClick={invite}>{copied ? "تم نسخ رابط الدعوة ✔" : "📤 نسخ رابط الدعوة"}</button>
+      <div className="card2">
+        <button className="btn1" onClick={invite}>{copied ? "تم النسخ ✔" : "📤 دعوة جيرانك"}</button>
       </div>
-    </div>
-  );
-}
-
-
-function UpdateNotice() {
-  const [info, setInfo] = useState(null);
-  useEffect(() => { check(); }, []);
-  async function check() {
-    try {
-      const r = await fetch("https://api.github.com/repos/abdo15542/lamma/releases/tags/latest", { cache: "no-store" });
-      if (!r.ok) { setInfo(null); return; }
-      const d = await r.json();
-      const bm = String(d.body || "").match(/commit ([0-9a-f]{7,40})/);
-      const sha = String(bm ? bm[1] : (d.target_commitish || "")).slice(0, 7);
-      const mine = String(BUILD_SHA).slice(0, 7);
-      if (sha && mine !== "dev" && sha !== mine) {
-        const asset = (d.assets || []).find((a) => a.name.endsWith(".apk"));
-        setInfo({ url: asset ? asset.browser_download_url : d.html_url, sha, mine });
-      } else {
-        setInfo(null);
-      }
-    } catch (e) { setInfo(null); }
-  }
-  if (!info) return null;
-  return (
-    <div className="notice">
-      🔄 يتوفر تحديث جديد للَمّة! (نسختك: {info.mine} — المتاح: {info.sha})
-      <button onClick={() => { const a = document.createElement("a"); a.href = info.url; a.target = "_blank"; a.click(); }}>
-        ⬇️ حدّث الآن
-      </button>
     </div>
   );
 }
