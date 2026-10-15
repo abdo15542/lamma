@@ -19,7 +19,10 @@ const PATHS = {
   flag: "M5 3v18M5 4h12l-2 4 2 4H5",
   user: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0 2c-4 0-8 2-8 5v2h16v-2c0-3-4-5-8-5z",
   shield: "M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z",
-  out: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"
+  out: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
+  moon: "M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z",
+  search: "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zm10 2-4.35-4.35",
+  refresh: "M21 12a9 9 0 1 1-3-6.7M21 3v6h-6"
 };
 
 function Icon({ n, s = 24, f = false }) {
@@ -37,6 +40,8 @@ function timeAgo(t) {
   if (s < 86400) return Math.floor(s / 3600) + " س";
   return Math.floor(s / 86400) + " يوم";
 }
+
+function avaLetter(n) { const s = String(n || "").replace(/^ال/, ""); return s[0] || "؟"; }
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -179,7 +184,7 @@ function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, 
   return (
     <article className="post">
       <div className="phead">
-        <span className="ava sm">{(post.profiles?.username || "؟")[0]}</span>
+        <span className="ava sm">{avaLetter(post.profiles?.username)}</span>
         <div className="pwho">
           <b>@{post.profiles?.username}</b>
           <span>{city(post.city_id)} • {timeAgo(post.created_at)}</span>
@@ -225,8 +230,19 @@ function Feed({ profile, cities }) {
   const [cList, setCList] = useState([]);
   const [cText, setCText] = useState("");
   const [rText, setRText] = useState("");
+  const [dark, setDark] = useState(localStorage.getItem("lamma-dark") === "1");
+  const [skel, setSkel] = useState(false);
+  const [pull, setPull] = useState(0);
+  const [startY, setStartY] = useState(null);
+  const [sQ, setSQ] = useState("");
+  const [sRes, setSRes] = useState([]);
+  const [sBusy, setSBusy] = useState(false);
 
   useEffect(() => { loadFollows(); }, []);
+  useEffect(() => {
+    document.body.classList.toggle("dark", dark);
+    localStorage.setItem("lamma-dark", dark ? "1" : "0");
+  }, [dark]);
   useEffect(() => { if (tab === "home" || tab === "follows") loadPosts(); }, [selectedCityId, tab, follows]);
   useEffect(() => { if (sheet && sheet.type === "comments") loadComments(sheet.post.id); }, [sheet]);
 
@@ -236,15 +252,17 @@ function Feed({ profile, cities }) {
   }
   async function loadPosts() {
     const sel = "*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)";
+    setSkel(true);
     let q = supabase.from("posts").select(sel).order("created_at", { ascending: false }).limit(100);
     if (tab === "home") q = q.eq("city_id", selectedCityId);
     else if (tab === "follows") q = follows.length ? q.in("city_id", follows) : null;
-    if (!q) { setPosts([]); return; }
+    if (!q) { setPosts([]); setSkel(false); return; }
     const { data, error } = await q;
     if (error) setMessage("خطأ جلب: " + error.message);
     else setPosts(data || []);
     const { data: v } = await supabase.from("useful_votes").select("post_id").eq("user_id", profile.id);
     setVotedIds(new Set((v || []).map((x) => x.post_id)));
+    setSkel(false);
   }
   async function loadComments(postId) {
     const { data } = await supabase.from("comments").select("*, profiles!comments_user_id_fkey(username)").eq("post_id", postId).order("created_at", { ascending: true });
@@ -309,6 +327,20 @@ function Feed({ profile, cities }) {
     try { if (navigator.share) { await navigator.share({ text }); return; } } catch (e) {}
     try { await navigator.clipboard.writeText(text); setNotice("تم نسخ بطاقة المنشور ✔ الصقها في واتساب"); } catch (e) { setNotice(text); }
   }
+  async function doSearch() {
+    if (!sQ.trim()) { setSRes([]); return; }
+    setSBusy(true);
+    const term = "%" + sQ.trim() + "%";
+    const { data } = await supabase.from("posts")
+      .select("*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)")
+      .or("title.ilike." + term + ",body.ilike." + term)
+      .order("created_at", { ascending: false }).limit(20);
+    setSRes(data || []);
+    setSBusy(false);
+  }
+  function ts(e) { if (window.scrollY <= 0) setStartY(e.touches[0].clientY); }
+  function tm(e) { if (startY != null && window.scrollY <= 0) { const dy = e.touches[0].clientY - startY; if (dy > 0) setPull(Math.min(dy, 90)); } }
+  function te() { if (pull > 60) { loadPosts(); setNotice("تم التحديث ✔"); } setPull(0); setStartY(null); }
   async function logout() { await supabase.auth.signOut(); }
   function cityName(id) { return cities.find((c) => c.id === Number(id))?.name || ""; }
   function categoryLabel(id) { return categories.find((i) => i.id === id)?.label || id; }
@@ -327,6 +359,8 @@ function Feed({ profile, cities }) {
       <header className="topbar2">
         <div className="logo">لَمّة</div>
         <div style={{ display: "flex", gap: 6 }}>
+          <button className="ibtn" onClick={() => setSheet({ type: "search" })}><Icon n="search" /></button>
+          <button className="ibtn" onClick={() => setDark(!dark)}><Icon n="moon" /></button>
           {profile.is_admin && <button className="ibtn" onClick={() => setTab("admin")}><Icon n="shield" /></button>}
           <button className="ibtn" onClick={logout}><Icon n="out" /></button>
         </div>
@@ -335,11 +369,12 @@ function Feed({ profile, cities }) {
       {notice && <div className="notice">{notice}</div>}
 
       {tab === "home" && (
-        <>
+        <div onTouchStart={ts} onTouchMove={tm} onTouchEnd={te}>
+          <div className={"pull " + (pull > 10 ? "on" : "")}><Icon n="refresh" s={20} /></div>
           <div className="stories">
             {cities.map((c) => (
               <button key={c.id} className={"story " + (c.id === selectedCityId ? "on" : "")} onClick={() => setSelectedCityId(c.id)}>
-                <span className="ring"><span className="ava">{c.name[0]}</span></span>
+                <span className="ring"><span className="ava">{avaLetter(c.name)}</span></span>
                 <span className="sname">{c.name}</span>
               </button>
             ))}
@@ -352,9 +387,10 @@ function Feed({ profile, cities }) {
               </button>
             )}
           </div>
-          {posts.length === 0 && <div className="empty">لا منشورات بعد في {cityName(selectedCityId)}.<br />كن أول من ينشر!</div>}
+          {skel && [1, 2, 3].map((i) => (<div className="skpost" key={i}><div className="sk head" /><div className="sk img" /></div>))}
+          {posts.length === 0 && !skel && <div className="empty">لا منشورات بعد في {cityName(selectedCityId)}.<br />كن أول من ينشر!</div>}
           {posts.map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
-        </>
+        </div>
       )}
 
       {tab === "pulse" && <Pulse profile={profile} cities={cities} onOpen={(p) => setSheet({ type: "post", post: p })} />}
@@ -375,6 +411,14 @@ function Feed({ profile, cities }) {
         <button className={tab === "me" ? "on" : ""} onClick={() => setTab("me")}><Icon n="user" /></button>
       </nav>
 
+      {sheet && sheet.type === "search" && (
+        <Sheet title="بحث في كل المدن" onClose={() => setSheet(null)}>
+          <input placeholder="ابحث عن منشور..." value={sQ} onChange={(e) => setSQ(e.target.value)} />
+          <button className="btn1" onClick={doSearch}>{sBusy ? "جاري البحث..." : "بحث"}</button>
+          {sRes.map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
+          {sRes.length === 0 && sQ && !sBusy && <div className="empty">لا نتائج.</div>}
+        </Sheet>
+      )}
       {sheet && sheet.type === "compose" && (
         <Sheet title="منشور جديد" onClose={() => setSheet(null)}>
           <div className="chips">{categories.map((c) => (<button key={c.id} className={category === c.id ? "on" : ""} onClick={() => setCategory(c.id)}>{c.label}</button>))}</div>
@@ -392,7 +436,7 @@ function Feed({ profile, cities }) {
         <Sheet title={"التعليقات (" + cList.length + ")"} onClose={() => setSheet(null)}>
           {cList.map((c) => (
             <div className="comment" key={c.id}>
-              <span className="ava sm">{(c.profiles?.username || "؟")[0]}</span>
+              <span className="ava sm">{avaLetter(c.profiles?.username)}</span>
               <div><b>@{c.profiles?.username}</b> {c.body}</div>
             </div>
           ))}
@@ -463,16 +507,24 @@ function Pulse({ profile, cities, onOpen }) {
 function Admin() {
   const [reports, setReports] = useState([]);
   const [confirmId, setConfirmId] = useState(null);
+  const [stats, setStats] = useState(null);
   useEffect(() => { load(); }, []);
   async function load() {
     const { data } = await supabase.from("reports").select("*, posts(title, body), profiles!reports_user_id_fkey(username)").order("created_at", { ascending: false });
     setReports(data || []);
+    const [u, p, c] = await Promise.all([
+      supabase.from("profiles").select("*", { count: "exact", head: true }),
+      supabase.from("posts").select("*", { count: "exact", head: true }),
+      supabase.from("comments").select("*", { count: "exact", head: true })
+    ]);
+    setStats({ u: u.count || 0, p: p.count || 0, c: c.count || 0 });
   }
   async function deletePost(postId) { await supabase.from("posts").delete().eq("id", postId); setConfirmId(null); load(); }
   async function dismiss(id) { await supabase.from("reports").delete().eq("id", id); load(); }
   return (
     <div>
       <div className="cityline"><b>👑 لوحة الإدارة</b><span className="muted">{reports.length} بلاغ</span></div>
+      {stats && <div className="stats"><span>👥 {stats.u} مستخدم</span><span>📝 {stats.p} منشور</span><span>💬 {stats.c} تعليق</span></div>}
       {reports.length === 0 && <div className="empty">لا بلاغات. المجتمع نظيف ✔</div>}
       {reports.map((r) => (
         <div className="card2" key={r.id}>
@@ -496,7 +548,7 @@ function Me({ profile, cities, onInvite }) {
   return (
     <div>
       <div className="mehead">
-        <span className="ava">{(profile.username || "؟")[0]}</span>
+        <span className="ava">{avaLetter(profile.username)}</span>
         <b style={{ fontSize: 18 }}>@{profile.username} {profile.is_admin ? "👑" : ""}</b>
         <span className="muted">{cityName(profile.city_id)}</span>
       </div>
