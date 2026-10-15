@@ -505,20 +505,23 @@ function UpdateNotice() {
   useEffect(() => { check(); }, []);
   async function check() {
     try {
-      const r = await fetch("https://api.github.com/repos/abdo15542/lamma/releases/tags/latest");
-      if (!r.ok) return;
+      const r = await fetch("https://api.github.com/repos/abdo15542/lamma/releases/tags/latest", { cache: "no-store" });
+      if (!r.ok) { setInfo(null); return; }
       const d = await r.json();
-      const sha = d.target_commitish;
-      if (sha && BUILD_SHA !== "dev" && sha !== BUILD_SHA) {
+      const sha = String(d.target_commitish || "").slice(0, 7);
+      const mine = String(BUILD_SHA).slice(0, 7);
+      if (sha && mine !== "dev" && sha !== mine) {
         const asset = (d.assets || []).find((a) => a.name.endsWith(".apk"));
-        setInfo({ url: asset ? asset.browser_download_url : d.html_url });
+        setInfo({ url: asset ? asset.browser_download_url : d.html_url, sha, mine });
+      } else {
+        setInfo(null);
       }
-    } catch (e) {}
+    } catch (e) { setInfo(null); }
   }
   if (!info) return null;
   return (
     <div className="notice">
-      🔄 يتوفر تحديث جديد للَمّة!
+      🔄 يتوفر تحديث جديد للَمّة! (نسختك: {info.mine} — المتاح: {info.sha})
       <button onClick={() => { const a = document.createElement("a"); a.href = info.url; a.target = "_blank"; a.click(); }}>
         ⬇️ حدّث الآن
       </button>
