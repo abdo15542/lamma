@@ -92,3 +92,5 @@ body.dark .comment{border-color:#1a1a1a}
 body.dark .btn2{background:#1e1e1e;color:#ddd}
 body.dark .notice{background:#062c22;color:#6ee7b7;border-color:#065f46}
 body.dark .empty{color:#888}
+
+.nbadge{position:absolute;top:2px;left:2px;background:#e11d48;color:#fff;border-radius:999px;font-size:10px;min-width:16px;height:16px;display:flex;align-items:center;justify-content:center;padding:0 4px}

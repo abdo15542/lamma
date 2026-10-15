@@ -22,7 +22,9 @@ const PATHS = {
   out: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9",
   moon: "M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z",
   search: "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zm10 2-4.35-4.35",
-  refresh: "M21 12a9 9 0 1 1-3-6.7M21 3v6h-6"
+  refresh: "M21 12a9 9 0 1 1-3-6.7M21 3v6h-6",
+  bell: "M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0",
+  mark: "M6 2h12v20l-6-4-6 4z"
 };
 
 function Icon({ n, s = 24, f = false }) {
@@ -174,7 +176,7 @@ function Sheet({ title, onClose, children }) {
   );
 }
 
-function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, onReport, city, cat }) {
+function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, onReport, city, cat, saved, onSave }) {
   const [boom, setBoom] = useState(false);
   function dbl() {
     if (!voted) onLike(post.id);
@@ -201,6 +203,7 @@ function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, 
         <button className={"ibtn " + (voted ? "liked" : "")} onClick={() => onLike(post.id)}><Icon n="heart" f={voted} /></button>
         <button className="ibtn" onClick={onComments}><Icon n="comment" /></button>
         <button className="ibtn" onClick={onShare}><Icon n="send" /></button>
+        <button className="ibtn" onClick={onSave}><Icon n="mark" f={saved} /></button>
         <span className="sp" />
         <button className="ibtn" onClick={onReport}><Icon n="flag" /></button>
       </div>
@@ -230,6 +233,10 @@ function Feed({ profile, cities }) {
   const [cList, setCList] = useState([]);
   const [cText, setCText] = useState("");
   const [rText, setRText] = useState("");
+  const [unread, setUnread] = useState(0);
+  const [savedIds, setSavedIds] = useState(new Set());
+  const [nList, setNList] = useState([]);
+  const [svList, setSvList] = useState([]);
   const [dark, setDark] = useState(localStorage.getItem("lamma-dark") === "1");
   const [skel, setSkel] = useState(false);
   const [pull, setPull] = useState(0);
@@ -238,7 +245,7 @@ function Feed({ profile, cities }) {
   const [sRes, setSRes] = useState([]);
   const [sBusy, setSBusy] = useState(false);
 
-  useEffect(() => { loadFollows(); }, []);
+  useEffect(() => { loadFollows(); loadUnread(); loadSaves(); const t = setInterval(loadUnread, 30000); return () => clearInterval(t); }, []);
   useEffect(() => {
     document.body.classList.toggle("dark", dark);
     localStorage.setItem("lamma-dark", dark ? "1" : "0");
@@ -306,6 +313,8 @@ function Feed({ profile, cities }) {
     } else {
       await supabase.from("useful_votes").insert({ post_id: postId, user_id: profile.id });
       const n = new Set(votedIds); n.add(postId); setVotedIds(n);
+      const owner = posts.find((x) => x.id === postId)?.user_id || (sheet && sheet.post && sheet.post.id === postId ? sheet.post.user_id : null);
+      if (owner && owner !== profile.id) await supabase.from("notifications").insert({ user_id: owner, actor_id: profile.id, type: "like", post_id: postId });
     }
     loadPosts();
   }
@@ -313,6 +322,8 @@ function Feed({ profile, cities }) {
     const text = cText.trim();
     if (!text) return;
     await supabase.from("comments").insert({ post_id: postId, user_id: profile.id, body: text });
+    const owner = posts.find((x) => x.id === postId)?.user_id || (sheet && sheet.post ? sheet.post.user_id : null);
+    if (owner && owner !== profile.id) await supabase.from("notifications").insert({ user_id: owner, actor_id: profile.id, type: "comment", post_id: postId });
     setCText("");
     loadComments(postId);
     loadPosts();
@@ -341,6 +352,37 @@ function Feed({ profile, cities }) {
   function ts(e) { if (window.scrollY <= 0) setStartY(e.touches[0].clientY); }
   function tm(e) { if (startY != null && window.scrollY <= 0) { const dy = e.touches[0].clientY - startY; if (dy > 0) setPull(Math.min(dy, 90)); } }
   function te() { if (pull > 60) { loadPosts(); setNotice("تم التحديث ✔"); } setPull(0); setStartY(null); }
+  async function loadUnread() {
+    const { count } = await supabase.from("notifications").select("*", { count: "exact", head: true }).eq("user_id", profile.id).eq("read", false);
+    setUnread(count || 0);
+  }
+  async function loadSaves() {
+    const { data } = await supabase.from("saves").select("post_id").eq("user_id", profile.id);
+    setSavedIds(new Set((data || []).map((x) => x.post_id)));
+  }
+  async function openNotif() {
+    const { data } = await supabase.from("notifications").select("*, profiles!notifications_actor_id_fkey(username), posts(title)").eq("user_id", profile.id).order("created_at", { ascending: false }).limit(30);
+    setNList(data || []);
+    setSheet({ type: "notif" });
+    await supabase.from("notifications").update({ read: true }).eq("user_id", profile.id).eq("read", false);
+    setUnread(0);
+  }
+  async function openSaves() {
+    const ids = Array.from(savedIds);
+    if (!ids.length) { setSvList([]); setSheet({ type: "saves" }); return; }
+    const { data } = await supabase.from("posts").select("*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)").in("id", ids).order("created_at", { ascending: false });
+    setSvList(data || []);
+    setSheet({ type: "saves" });
+  }
+  async function toggleSave(post) {
+    if (savedIds.has(post.id)) {
+      await supabase.from("saves").delete().eq("user_id", profile.id).eq("post_id", post.id);
+      const n = new Set(savedIds); n.delete(post.id); setSavedIds(n);
+    } else {
+      await supabase.from("saves").insert({ user_id: profile.id, post_id: post.id });
+      const n = new Set(savedIds); n.add(post.id); setSavedIds(n);
+    }
+  }
   async function logout() { await supabase.auth.signOut(); }
   function cityName(id) { return cities.find((c) => c.id === Number(id))?.name || ""; }
   function categoryLabel(id) { return categories.find((i) => i.id === id)?.label || id; }
@@ -351,6 +393,7 @@ function Feed({ profile, cities }) {
     post: p, voted: votedIds.has(p.id), useful: usefulCount(p), comments: commentCount(p),
     onLike: toggleUseful, onComments: () => setSheet({ type: "comments", post: p }),
     onShare: () => sharePost(p), onReport: () => setSheet({ type: "report", post: p }),
+    saved: savedIds.has(p.id), onSave: () => toggleSave(p),
     city: cityName, cat: categoryLabel
   });
 
@@ -359,6 +402,10 @@ function Feed({ profile, cities }) {
       <header className="topbar2">
         <div className="logo">لَمّة</div>
         <div style={{ display: "flex", gap: 6 }}>
+          <button className="ibtn" onClick={openNotif} style={{ position: "relative" }}>
+            <Icon n="bell" />
+            {unread > 0 && <span className="nbadge">{unread}</span>}
+          </button>
           <button className="ibtn" onClick={() => setSheet({ type: "search" })}><Icon n="search" /></button>
           <button className="ibtn" onClick={() => setDark(!dark)}><Icon n="moon" /></button>
           {profile.is_admin && <button className="ibtn" onClick={() => setTab("admin")}><Icon n="shield" /></button>}
@@ -401,7 +448,7 @@ function Feed({ profile, cities }) {
         </>
       )}
       {tab === "admin" && profile.is_admin && <Admin />}
-      {tab === "me" && <Me profile={profile} cities={cities} onInvite={shareApp} />}
+      {tab === "me" && <Me profile={profile} cities={cities} onInvite={shareApp} onSaves={openSaves} />}
 
       <nav className="bottom">
         <button className={tab === "home" ? "on" : ""} onClick={() => setTab("home")}><Icon n="home" /></button>
@@ -417,6 +464,23 @@ function Feed({ profile, cities }) {
           <button className="btn1" onClick={doSearch}>{sBusy ? "جاري البحث..." : "بحث"}</button>
           {sRes.map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
           {sRes.length === 0 && sQ && !sBusy && <div className="empty">لا نتائج.</div>}
+        </Sheet>
+      )}
+      {sheet && sheet.type === "notif" && (
+        <Sheet title="الإشعارات" onClose={() => setSheet(null)}>
+          {nList.map((n) => (
+            <div className="comment" key={n.id}>
+              <span className="ava sm">{avaLetter(n.profiles?.username)}</span>
+              <div>{n.type === "comment" ? "💬 علّق" : "♥ أعجب"} <b>@{n.profiles?.username}</b> على: {n.posts?.title || "منشور"}<div className="muted">{timeAgo(n.created_at)}</div></div>
+            </div>
+          ))}
+          {nList.length === 0 && <div className="empty">لا إشعارات بعد.</div>}
+        </Sheet>
+      )}
+      {sheet && sheet.type === "saves" && (
+        <Sheet title="محفوظاتي" onClose={() => setSheet(null)}>
+          {svList.map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
+          {svList.length === 0 && <div className="empty">لا منشورات محفوظة.</div>}
         </Sheet>
       )}
       {sheet && sheet.type === "compose" && (
@@ -541,7 +605,7 @@ function Admin() {
   );
 }
 
-function Me({ profile, cities, onInvite }) {
+function Me({ profile, cities, onInvite, onSaves }) {
   const [copied, setCopied] = useState(false);
   function cityName(id) { return cities.find((c) => c.id === Number(id))?.name || ""; }
   async function invite() { await onInvite(); setCopied(true); setTimeout(() => setCopied(false), 2500); }
@@ -568,6 +632,9 @@ function Me({ profile, cities, onInvite }) {
           <li>المنشورات مسؤولية أصحابها، وللإدارة حذف أي محتوى مخالف.</li>
           <li>البلاغات سرية وتراجعها الإدارة فقط.</li>
         </ul>
+      </div>
+      <div className="card2">
+        <button className="btn2" onClick={onSaves}>🔖 محفوظاتي</button>
       </div>
       <div className="card2">
         <button className="btn1" onClick={invite}>{copied ? "تم النسخ ✔" : "📤 دعوة جيرانك"}</button>
