@@ -508,7 +508,8 @@ function UpdateNotice() {
       const r = await fetch("https://api.github.com/repos/abdo15542/lamma/releases/tags/latest", { cache: "no-store" });
       if (!r.ok) { setInfo(null); return; }
       const d = await r.json();
-      const sha = String(d.target_commitish || "").slice(0, 7);
+      const bm = String(d.body || "").match(/commit ([0-9a-f]{7,40})/);
+      const sha = String(bm ? bm[1] : (d.target_commitish || "")).slice(0, 7);
       const mine = String(BUILD_SHA).slice(0, 7);
       if (sha && mine !== "dev" && sha !== mine) {
         const asset = (d.assets || []).find((a) => a.name.endsWith(".apk"));
