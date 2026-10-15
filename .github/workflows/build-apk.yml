@@ -13,6 +13,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Fetch signing keys
+        uses: actions/checkout@v4
+        with:
+          repository: abdo15542/lamma-keys
+          token: ${{ secrets.KEYS_PAT }}
+          path: keys
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -39,6 +45,25 @@ jobs:
       - name: Accept licenses
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+      - name: Configure fixed signing
+        env:
+          KS_PASS: ${{ secrets.KS_PASS }}
+        run: |
+          cat >> android/app/build.gradle << 'GRADLE'
+          android {
+            signingConfigs {
+              lamma {
+                storeFile file("../../keys/lamma.keystore")
+                storePassword System.getenv("KS_PASS")
+                keyAlias "lamma"
+                keyPassword System.getenv("KS_PASS")
+              }
+            }
+            buildTypes {
+              debug { signingConfig signingConfigs.lamma }
+            }
+          }
+          GRADLE
       - name: Build debug APK
         run: |
           cd android
@@ -49,6 +74,12 @@ jobs:
         with:
           name: lamma-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
+      - name: Force-move latest tag
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git tag -f latest "${{ github.sha }}"
+          git push -f origin refs/tags/latest
       - name: Publish auto release
         uses: softprops/action-gh-release@v2
         with:

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./lib/supabase";
 
+const BUILD_SHA = typeof __BUILD_SHA__ !== "undefined" ? __BUILD_SHA__ : "dev";
+
 const categories = [
   { id: "services", label: "خدمات" },
   { id: "alerts", label: "تنبيهات" },
@@ -414,6 +416,7 @@ function Feed({ profile, cities }) {
       </header>
 
       {notice && <div className="notice">{notice}</div>}
+      <UpdateNotice />
 
       {tab === "home" && (
         <div onTouchStart={ts} onTouchMove={tm} onTouchEnd={te}>
@@ -639,6 +642,37 @@ function Me({ profile, cities, onInvite, onSaves }) {
       <div className="card2">
         <button className="btn1" onClick={invite}>{copied ? "تم النسخ ✔" : "📤 دعوة جيرانك"}</button>
       </div>
+    </div>
+  );
+}
+
+
+function UpdateNotice() {
+  const [info, setInfo] = useState(null);
+  useEffect(() => { check(); }, []);
+  async function check() {
+    try {
+      const r = await fetch("https://api.github.com/repos/abdo15542/lamma/releases/tags/latest", { cache: "no-store" });
+      if (!r.ok) { setInfo(null); return; }
+      const d = await r.json();
+      const bm = String(d.body || "").match(/commit ([0-9a-f]{7,40})/);
+      const sha = String(bm ? bm[1] : (d.target_commitish || "")).slice(0, 7);
+      const mine = String(BUILD_SHA).slice(0, 7);
+      if (sha && mine !== "dev" && sha !== mine) {
+        const asset = (d.assets || []).find((a) => a.name.endsWith(".apk"));
+        setInfo({ url: asset ? asset.browser_download_url : d.html_url, sha, mine });
+      } else {
+        setInfo(null);
+      }
+    } catch (e) { setInfo(null); }
+  }
+  if (!info) return null;
+  return (
+    <div className="notice">
+      🔄 يتوفر تحديث جديد للَمّة! (نسختك: {info.mine} — المتاح: {info.sha})
+      <button className="btn1" onClick={() => { const a = document.createElement("a"); a.href = info.url; a.target = "_blank"; a.click(); }}>
+        ⬇️ حدّث الآن
+      </button>
     </div>
   );
 }
