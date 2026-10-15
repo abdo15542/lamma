@@ -479,7 +479,7 @@ function About() {
       <div className="card">
         <h3>عن لَمّة</h3>
         <p className="post-body">لَمّة شبكة اجتماعية ليبية بسيطة تجمع أهل المدينة الواحدة: خدمات، تنبيهات، سوق، سوالف، وتواصل بين المدن. بدون إعلانات مزعجة وبدون خوارزميات معقدة.</p>
-        <div className="badge">الإصدار 1.1</div>
+        <div className="badge">الإصدار 1.2</div>
       </div>
       <div className="card">
         <h3>شروط الاستخدام</h3>
