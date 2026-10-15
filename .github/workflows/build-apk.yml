@@ -23,6 +23,7 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_BUILD_SHA: ${{ github.sha }}
         run: npm run build
       - name: Add Android platform
         run: npx cap add android
@@ -45,3 +46,13 @@ jobs:
         with:
           name: lamma-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
+      - name: Publish auto release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "Latest auto build"
+          body: "Auto build from commit ${{ github.sha }}"
+          files: android/app/build/outputs/apk/debug/app-debug.apk
+          make_latest: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./lib/supabase";
 
+const BUILD_SHA = typeof __BUILD_SHA__ !== "undefined" ? __BUILD_SHA__ : "dev";
+
 const categories = [
   { id: "services", label: "خدمات" },
   { id: "alerts", label: "تنبيهات" },
@@ -266,6 +268,7 @@ function Feed({ profile, cities }) {
       </div>
 
       {notice && <div className="notice">{notice}</div>}
+      <UpdateNotice />
 
       {tab === "city" && (
         <>
@@ -492,6 +495,33 @@ function About() {
         <h3>ادعُ جيرانك</h3>
         <button onClick={invite}>{copied ? "تم نسخ رابط الدعوة ✔" : "📤 نسخ رابط الدعوة"}</button>
       </div>
+    </div>
+  );
+}
+
+
+function UpdateNotice() {
+  const [info, setInfo] = useState(null);
+  useEffect(() => { check(); }, []);
+  async function check() {
+    try {
+      const r = await fetch("https://api.github.com/repos/abdo15542/lamma/releases/tags/latest");
+      if (!r.ok) return;
+      const d = await r.json();
+      const sha = d.target_commitish;
+      if (sha && BUILD_SHA !== "dev" && sha !== BUILD_SHA) {
+        const asset = (d.assets || []).find((a) => a.name.endsWith(".apk"));
+        setInfo({ url: asset ? asset.browser_download_url : d.html_url });
+      }
+    } catch (e) {}
+  }
+  if (!info) return null;
+  return (
+    <div className="notice">
+      🔄 يتوفر تحديث جديد للَمّة!
+      <button onClick={() => { const a = document.createElement("a"); a.href = info.url; a.target = "_blank"; a.click(); }}>
+        ⬇️ حدّث الآن
+      </button>
     </div>
   );
 }
