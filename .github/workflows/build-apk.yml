@@ -56,15 +56,23 @@ jobs:
         env:
           KS_PASS: ${{ secrets.KS_PASS }}
         run: |
-          echo "lammaStorePassword=$KS_PASS" >> android/gradle.properties
+          # Write password to a file Gradle can read directly
+          echo -n "$KS_PASS" > keys/lamma.password
+          chmod 600 keys/lamma.password
+          
+          # Append signing config that reads from the file
           cat >> android/app/build.gradle << 'GRADLE'
+          
+          def lammaPasswordFile = file("../../keys/lamma.password")
+          def lammaPassword = lammaPasswordFile.exists() ? lammaPasswordFile.text.trim() : ""
+          
           android {
             signingConfigs {
               lamma {
                 storeFile file("../../keys/lamma.keystore")
-                storePassword project.findProperty("lammaStorePassword") ?: System.getenv("KS_PASS")
+                storePassword lammaPassword
                 keyAlias "lamma"
-                keyPassword project.findProperty("lammaStorePassword") ?: System.getenv("KS_PASS")
+                keyPassword lammaPassword
               }
             }
             buildTypes {
@@ -72,10 +80,10 @@ jobs:
             }
           }
           GRADLE
+          
+          echo "Signing config appended"
 
       - name: Build debug APK
-        env:
-          KS_PASS: ${{ secrets.KS_PASS }}
         run: |
           cd android
           chmod +x gradlew
