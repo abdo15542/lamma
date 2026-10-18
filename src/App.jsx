@@ -26,7 +26,11 @@ const PATHS = {
   search: "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zm10 2-4.35-4.35",
   refresh: "M21 12a9 9 0 1 1-3-6.7M21 3v6h-6",
   bell: "M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0",
-  mark: "M6 2h12v20l-6-4-6 4z"
+  mark: "M6 2h12v20l-6-4-6 4z",
+  pin: "M12 2 4 8h3v6l-3 3 8-3 8 3-3-3V8h3z"
+  mail: "M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm0 4 8 5 8-5"
+  chart: "M3 3v18h18M7 15l4-4 4 4 5-5"
+  edit: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"
 };
 
 function Icon({ n, s = 24, f = false }) {
@@ -35,6 +39,12 @@ function Icon({ n, s = 24, f = false }) {
       <path d={PATHS[n]} />
     </svg>
   );
+}
+
+function hashTags(text) {
+  if (!text) return text;
+  const parts = text.split(/(#\w+)/g);
+  return parts.map((p, i) => /^#\w+$/.test(p) ? <span key={i} className="hash">{p}</span> : p);
 }
 
 function timeAgo(t) {
@@ -178,7 +188,7 @@ function Sheet({ title, onClose, children }) {
   );
 }
 
-function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, onReport, city, cat, saved, onSave }) {
+function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, onReport, city, cat, saved, onSave, onPin, onMessage, canPin }) {
   const [boom, setBoom] = useState(false);
   function dbl() {
     if (!voted) onLike(post.id);
@@ -186,11 +196,11 @@ function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, 
     setTimeout(() => setBoom(false), 800);
   }
   return (
-    <article className="post">
+    <article className={"post " + (post.is_pinned ? "pinned" : "")}>
       <div className="phead">
         <span className="ava sm">{avaLetter(post.profiles?.username)}</span>
         <div className="pwho">
-          <b>@{post.profiles?.username}</b>
+          <b>{post.is_pinned && <span className="pinned-label">📌 مثبّت</span>}@{post.profiles?.username}</b>
           <span>{city(post.city_id)} • {timeAgo(post.created_at)}</span>
         </div>
         <span className="badge2">{cat(post.category)}</span>
@@ -208,9 +218,11 @@ function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, 
         <button className="ibtn" onClick={onSave}><Icon n="mark" f={saved} /></button>
         <span className="sp" />
         <button className="ibtn" onClick={onReport}><Icon n="flag" /></button>
+        {canPin && <button className="ibtn" onClick={onPin}><Icon n="pin" f={post.is_pinned} /></button>}
+        {onMessage && <button className="ibtn" onClick={onMessage}><Icon n="mail" /></button>}
       </div>
       <div className="pcap">
-        <b>{useful} مفيد</b> · <b>@{post.profiles?.username}</b> {post.title} — {post.body}
+        <b>{useful} مفيد</b> · <b>@{post.profiles?.username}</b> <b>{hashTags(post.title)}</b> — {hashTags(post.body)}
         {comments > 0 && <div className="muted">عرض كل التعليقات ({comments})</div>}
       </div>
     </article>
@@ -238,6 +250,10 @@ function Feed({ profile, cities }) {
   const [unread, setUnread] = useState(0);
   const [savedIds, setSavedIds] = useState(new Set());
   const [nList, setNList] = useState([]);
+  const [unreadMsgs, setUnreadMsgs] = useState(0);
+  const [inbox, setInbox] = useState([]);
+  const [myStats, setMyStats] = useState(null);
+  const [bioDraft, setBioDraft] = useState(profile.bio || "");
   const [svList, setSvList] = useState([]);
   const [dark, setDark] = useState(localStorage.getItem("lamma-dark") === "1");
   const [skel, setSkel] = useState(false);
@@ -247,7 +263,7 @@ function Feed({ profile, cities }) {
   const [sRes, setSRes] = useState([]);
   const [sBusy, setSBusy] = useState(false);
 
-  useEffect(() => { loadFollows(); loadUnread(); loadSaves(); const t = setInterval(loadUnread, 30000); return () => clearInterval(t); }, []);
+  useEffect(() => { loadFollows(); loadUnread(); loadSaves(); loadMsgs(); const t2 = setInterval(loadMsgs, 30000); const t = setInterval(loadUnread, 30000); return () => { clearInterval(t); clearInterval(t2); }; }, []);
   useEffect(() => {
     document.body.classList.toggle("dark", dark);
     localStorage.setItem("lamma-dark", dark ? "1" : "0");
@@ -385,6 +401,45 @@ function Feed({ profile, cities }) {
       const n = new Set(savedIds); n.add(post.id); setSavedIds(n);
     }
   }
+  async function loadMsgs() {
+    const { count } = await supabase.from("messages").select("*", { count: "exact", head: true }).eq("to_id", profile.id).eq("read", false);
+    setUnreadMsgs(count || 0);
+  }
+  async function openInbox() {
+    const raw = await supabase.from("messages").select("*, profiles!messages_from_id_fkey(username)").eq("to_id", profile.id).order("created_at", { ascending: false }).limit(50);
+    const out = await supabase.from("messages").select("*, profiles!messages_to_id_fkey(username)").eq("from_id", profile.id).order("created_at", { ascending: false }).limit(50);
+    const all = [...(raw.data || []), ...(out.data || [])];
+    const grouped = {};
+    all.forEach((m) => { const k = m.from_id === profile.id ? m.to_id : m.from_id; if (!grouped[k]) grouped[k] = { peer: k, peerName: m.from_id === profile.id ? m.profiles?.username : m.profiles?.username, last: m, unread: 0 }; if (m.to_id === profile.id && !m.read) grouped[k].unread++; if (new Date(m.created_at) > new Date(grouped[k].last.created_at)) grouped[k].last = m; });
+    setInbox(Object.values(grouped));
+    setSheet({ type: "inbox" });
+    await supabase.from("messages").update({ read: true }).eq("to_id", profile.id).eq("read", false);
+    loadMsgs();
+  }
+  async function openChatWith(peerId, peerName) {
+    const { data } = await supabase.from("messages").select("*").or("and(from_id.eq." + profile.id + ",to_id.eq." + peerId + "),and(from_id.eq." + peerId + ",to_id.eq." + profile.id + ")").order("created_at", { ascending: true });
+    setSheet({ type: "chat", peerId, peerName, messages: data || [], text: "" });
+  }
+  async function sendMessage(peerId, body) {
+    if (!body.trim()) return;
+    await supabase.from("messages").insert({ from_id: profile.id, to_id: peerId, body: body.trim() });
+    const { data } = await supabase.from("messages").select("*").or("and(from_id.eq." + profile.id + ",to_id.eq." + peerId + "),and(from_id.eq." + peerId + ",to_id.eq." + profile.id + ")").order("created_at", { ascending: true });
+    setSheet((prev) => ({ ...prev, messages: data || [], text: "" }));
+  }
+  async function loadMyStats() {
+    const [p, c, l, f] = await Promise.all([
+      supabase.from("posts").select("*", { count: "exact", head: true }).eq("user_id", profile.id),
+      supabase.from("comments").select("*", { count: "exact", head: true }).eq("user_id", profile.id),
+      supabase.from("useful_votes").select("*", { count: "exact", head: true }).eq("user_id", profile.id),
+      supabase.from("city_follows").select("*", { count: "exact", head: true }).eq("user_id", profile.id)
+    ]);
+    setMyStats({ posts: p.count || 0, comments: c.count || 0, likes: l.count || 0, follows: f.count || 0 });
+  }
+  async function togglePin(postId, current) {
+    const now = current ? null : new Date().toISOString();
+    await supabase.from("posts").update({ is_pinned: !current, pinned_at: now }).eq("id", postId);
+    loadPosts();
+  }
   async function logout() { await supabase.auth.signOut(); }
   function cityName(id) { return cities.find((c) => c.id === Number(id))?.name || ""; }
   function categoryLabel(id) { return categories.find((i) => i.id === id)?.label || id; }
@@ -396,6 +451,8 @@ function Feed({ profile, cities }) {
     onLike: toggleUseful, onComments: () => setSheet({ type: "comments", post: p }),
     onShare: () => sharePost(p), onReport: () => setSheet({ type: "report", post: p }),
     saved: savedIds.has(p.id), onSave: () => toggleSave(p),
+    onPin: () => togglePin(p.id, p.is_pinned), onMessage: p.user_id !== profile.id ? () => openChatWith(p.user_id, p.profiles?.username) : null,
+    canPin: profile.is_admin,
     city: cityName, cat: categoryLabel
   });
 
@@ -410,6 +467,10 @@ function Feed({ profile, cities }) {
           </button>
           <button className="ibtn" onClick={() => setSheet({ type: "search" })}><Icon n="search" /></button>
           <button className="ibtn" onClick={() => setDark(!dark)}><Icon n="moon" /></button>
+          <button className="ibtn" onClick={openInbox} style={{ position: "relative" }}>
+            <Icon n="mail" />
+            {unreadMsgs > 0 && <span className="nbadge">{unreadMsgs}</span>}
+          </button>
           {profile.is_admin && <button className="ibtn" onClick={() => setTab("admin")}><Icon n="shield" /></button>}
           <button className="ibtn" onClick={logout}><Icon n="out" /></button>
         </div>
@@ -451,7 +512,7 @@ function Feed({ profile, cities }) {
         </>
       )}
       {tab === "admin" && profile.is_admin && <Admin />}
-      {tab === "me" && <Me profile={profile} cities={cities} onInvite={shareApp} onSaves={openSaves} />}
+      {tab === "me" && <Me profile={profile} cities={cities} onInvite={shareApp} onSaves={openSaves} onStats={() => { loadMyStats(); setSheet({ type: "mystats" }); }} onEditBio={() => setSheet({ type: "bio" })} />}
 
       <nav className="bottom">
         <button className={tab === "home" ? "on" : ""} onClick={() => setTab("home")}><Icon n="home" /></button>
@@ -484,6 +545,57 @@ function Feed({ profile, cities }) {
         <Sheet title="محفوظاتي" onClose={() => setSheet(null)}>
           {svList.map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
           {svList.length === 0 && <div className="empty">لا منشورات محفوظة.</div>}
+        </Sheet>
+      )}
+      {sheet && sheet.type === "inbox" && (
+        <Sheet title={"📨 الرسائل (" + unreadMsgs + " جديدة)"} onClose={() => setSheet(null)}>
+          {inbox.length === 0 && <div className="empty">لا رسائل بعد.</div>}
+          {inbox.map((c) => (
+            <div className="msg-item" key={c.peer} onClick={() => openChatWith(c.peer, c.peerName)}>
+              <span className="ava sm">{avaLetter(c.peerName)}</span>
+              <div className="msg-name">@{c.peerName}{c.unread > 0 && <span className="unread-dot" style={{ display: "inline-block", marginLeft: 6 }} />}</div>
+              <div className="msg-time">{timeAgo(c.last.created_at)}</div>
+            </div>
+          ))}
+        </Sheet>
+      )}
+      {sheet && sheet.type === "chat" && (
+        <Sheet title={"💬 @" + sheet.peerName} onClose={() => setSheet(null)}>
+          <div style={{ maxHeight: 320, overflowY: "auto", padding: 8 }}>
+            {sheet.messages.map((m) => (
+              <div key={m.id} style={{ textAlign: m.from_id === profile.id ? "left" : "right", margin: "6px 0" }}>
+                <div style={{ display: "inline-block", padding: "8px 12px", borderRadius: 14, background: m.from_id === profile.id ? "#0f766e" : "#efefef", color: m.from_id === profile.id ? "#fff" : "#111", maxWidth: "80%" }}>
+                  {m.body}<div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>{timeAgo(m.created_at)}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="crow">
+            <input placeholder="اكتب رسالة..." value={sheet.text || ""} onChange={(e) => setSheet((prev) => ({ ...prev, text: e.target.value }))} />
+            <button onClick={() => sendMessage(sheet.peerId, sheet.text || "")}>إرسال</button>
+          </div>
+        </Sheet>
+      )}
+      {sheet && sheet.type === "mystats" && (
+        <Sheet title="📊 إحصائياتي" onClose={() => setSheet(null)}>
+          <div className="mehead">
+            <span className="ava" style={{ width: 72, height: 72, fontSize: 28 }}>{avaLetter(profile.username)}</span>
+            <b>@{profile.username}</b>
+            <div className="muted">عضو منذ {new Date(profile.joined_at || profile.created_at).toLocaleDateString("ar-LY")}</div>
+          </div>
+          <div className="stat-grid">
+            <div className="stat-cell"><b>{myStats?.posts || 0}</b><span>منشوراتي</span></div>
+            <div className="stat-cell"><b>{myStats?.comments || 0}</b><span>تعليقاتي</span></div>
+            <div className="stat-cell"><b>{myStats?.likes || 0}</b><span>إعجاباتي</span></div>
+            <div className="stat-cell"><b>{myStats?.follows || 0}</b><span>مدن أتابعها</span></div>
+          </div>
+        </Sheet>
+      )}
+      {sheet && sheet.type === "bio" && (
+        <Sheet title="✏️ تعديل السيرة الذاتية" onClose={() => setSheet(null)}>
+          <textarea placeholder="اكتب عن نفسك (200 حرف كحد أقصى)..." value={bioDraft} onChange={(e) => setBioDraft(e.target.value.slice(0, 200))} style={{ minHeight: 120 }} />
+          <div className="muted">{bioDraft.length}/200</div>
+          <button className="btn1" onClick={async () => { await supabase.from("profiles").update({ bio: bioDraft }).eq("id", profile.id); setNotice("تم الحفظ ✔"); setSheet(null); }}>حفظ</button>
         </Sheet>
       )}
       {sheet && sheet.type === "compose" && (
@@ -608,7 +720,7 @@ function Admin() {
   );
 }
 
-function Me({ profile, cities, onInvite, onSaves }) {
+function Me({ profile, cities, onInvite, onSaves, onStats, onEditBio }) {
   const [copied, setCopied] = useState(false);
   function cityName(id) { return cities.find((c) => c.id === Number(id))?.name || ""; }
   async function invite() { await onInvite(); setCopied(true); setTimeout(() => setCopied(false), 2500); }
@@ -618,6 +730,7 @@ function Me({ profile, cities, onInvite, onSaves }) {
         <span className="ava">{avaLetter(profile.username)}</span>
         <b style={{ fontSize: 18 }}>@{profile.username} {profile.is_admin ? "👑" : ""}</b>
         <span className="muted">{cityName(profile.city_id)}</span>
+        {profile.bio && <div style={{ fontSize: 14, color: "#444", textAlign: "center", marginTop: 6 }}>{profile.bio}</div>}
       </div>
       <div className="stats">
         <span>ليبي 100%</span><span>بدون إعلانات</span><span>مجتمع حقيقي</span>
@@ -638,6 +751,10 @@ function Me({ profile, cities, onInvite, onSaves }) {
       </div>
       <div className="card2">
         <button className="btn2" onClick={onSaves}>🔖 محفوظاتي</button>
+        <button className="btn2" onClick={onStats} style={{ marginTop: 8 }}>📊 إحصائياتي</button>
+      </div>
+      <div className="card2">
+        <button className="btn2" onClick={() => onEditBio && onEditBio()} style={{ marginTop: 0 }}>✏️ تعديل السيرة</button>
       </div>
       <div className="card2">
         <button className="btn1" onClick={invite}>{copied ? "تم النسخ ✔" : "📤 دعوة جيرانك"}</button>
