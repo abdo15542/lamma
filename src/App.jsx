@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useMemo, memo, useRef } from "react";
 import { supabase } from "./lib/supabase";
 
 const BUILD_SHA = typeof __BUILD_SHA__ !== "undefined" ? __BUILD_SHA__ : "dev";
@@ -176,6 +176,37 @@ function SetupProfile({ user, cities, onDone }) {
 }
 
 
+
+function LazyImage({ src, alt, className }) {
+  const [loaded, setLoaded] = useState(false);
+  const [inView, setInView] = useState(false);
+  const ref = useRef(null);
+  
+  useEffect(() => {
+    if (!ref.current) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) { setInView(true); obs.disconnect(); } },
+      { rootMargin: "200px" }
+    );
+    obs.observe(ref.current);
+    return () => obs.disconnect();
+  }, []);
+  
+  return (
+    <div ref={ref} style={{ position: "relative", background: "#f1f5f9" }}>
+      {inView && (
+        <img 
+          src={src} 
+          alt={alt} 
+          className={className + (loaded ? " loaded" : "")}
+          onLoad={() => setLoaded(true)}
+          loading="lazy"
+        />
+      )}
+    </div>
+  );
+}
+
 function Sheet({ title, onClose, children }) {
   return (
     <div className="overlay" onClick={onClose}>
@@ -188,7 +219,7 @@ function Sheet({ title, onClose, children }) {
   );
 }
 
-function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, onReport, city, cat, saved, onSave, onPin, onMessage, canPin }) {
+const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, onReport, city, cat, saved, onSave, onPin, onMessage, canPin }) {
   const [boom, setBoom] = useState(false);
   function dbl() {
     if (!voted) onLike(post.id);
@@ -207,12 +238,12 @@ function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, 
       </div>
       {post.image_url && (
         <div className="pimg" onDoubleClick={dbl}>
-          <img src={post.image_url} alt="" />
+          <LazyImage src={post.image_url} alt="" className="" />
           {boom && <span className="boom">♥</span>}
         </div>
       )}
       <div className="pacts">
-        <button className={"ibtn " + (voted ? "liked" : "")} onClick={() => onLike(post.id)}><Icon n="heart" f={voted} /></button>
+        <button className={"ibtn " + (voted ? "liked liked-pop" : "")} onClick={() => onLike(post.id)}><Icon n="heart" f={voted} /></button>
         <button className="ibtn" onClick={onComments}><Icon n="comment" /></button>
         <button className="ibtn" onClick={onShare}><Icon n="send" /></button>
         <button className="ibtn" onClick={onSave}><Icon n="mark" f={saved} /></button>
@@ -229,11 +260,14 @@ function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, 
   );
 }
 
+});
+
 function Feed({ profile, cities }) {
   const [tab, setTab] = useState("home");
   const [selectedCityId, setSelectedCityId] = useState(profile.city_id);
   const [posts, setPosts] = useState([]);
   const [votedIds, setVotedIds] = useState(new Set());
+  const [optimisticLiked, setOptimisticLiked] = useState(new Set());
   const [follows, setFollows] = useState([]);
   const [sheet, setSheet] = useState(null);
   const [notice, setNotice] = useState("");
@@ -249,6 +283,7 @@ function Feed({ profile, cities }) {
   const [rText, setRText] = useState("");
   const [unread, setUnread] = useState(0);
   const [savedIds, setSavedIds] = useState(new Set());
+  const [optimisticSaved, setOptimisticSaved] = useState(new Set());
   const [nList, setNList] = useState([]);
   const [unreadMsgs, setUnreadMsgs] = useState(0);
   const [inbox, setInbox] = useState([]);
@@ -262,6 +297,7 @@ function Feed({ profile, cities }) {
   const [sQ, setSQ] = useState("");
   const [sRes, setSRes] = useState([]);
   const [sBusy, setSBusy] = useState(false);
+  const debounceTimer = useRef(null);
 
   useEffect(() => { loadFollows(); loadUnread(); loadSaves(); loadMsgs(); const t2 = setInterval(loadMsgs, 30000); const t = setInterval(loadUnread, 30000); return () => { clearInterval(t); clearInterval(t2); }; }, []);
   useEffect(() => {
@@ -324,18 +360,22 @@ function Feed({ profile, cities }) {
     }
     setBusy(false);
   }
-  async function toggleUseful(postId) {
-    if (votedIds.has(postId)) {
+  const toggleUseful = useCallback(async function(postId) {
+    // Optimistic: show immediately
+    const wasLiked = votedIds.has(postId) || optimisticLiked.has(postId);
+    if (wasLiked) {
+      const n = new Set(optimisticLiked); n.delete(postId); setOptimisticLiked(n);
       await supabase.from("useful_votes").delete().eq("post_id", postId).eq("user_id", profile.id);
-      const n = new Set(votedIds); n.delete(postId); setVotedIds(n);
+      const n2 = new Set(votedIds); n2.delete(postId); setVotedIds(n2);
     } else {
+      const n = new Set(optimisticLiked); n.add(postId); setOptimisticLiked(n);
       await supabase.from("useful_votes").insert({ post_id: postId, user_id: profile.id });
-      const n = new Set(votedIds); n.add(postId); setVotedIds(n);
+      const n2 = new Set(votedIds); n2.add(postId); setVotedIds(n2);
       const owner = posts.find((x) => x.id === postId)?.user_id || (sheet && sheet.post && sheet.post.id === postId ? sheet.post.user_id : null);
       if (owner && owner !== profile.id) await supabase.from("notifications").insert({ user_id: owner, actor_id: profile.id, type: "like", post_id: postId });
     }
     loadPosts();
-  }
+  }, [votedIds, optimisticLiked, profile.id, posts]);
   async function addComment(postId) {
     const text = cText.trim();
     if (!text) return;
@@ -393,12 +433,15 @@ function Feed({ profile, cities }) {
     setSheet({ type: "saves" });
   }
   async function toggleSave(post) {
-    if (savedIds.has(post.id)) {
+    const wasSaved = savedIds.has(post.id) || optimisticSaved.has(post.id);
+    if (wasSaved) {
+      const n = new Set(optimisticSaved); n.delete(post.id); setOptimisticSaved(n);
       await supabase.from("saves").delete().eq("user_id", profile.id).eq("post_id", post.id);
-      const n = new Set(savedIds); n.delete(post.id); setSavedIds(n);
+      const n2 = new Set(savedIds); n2.delete(post.id); setSavedIds(n2);
     } else {
+      const n = new Set(optimisticSaved); n.add(post.id); setOptimisticSaved(n);
       await supabase.from("saves").insert({ user_id: profile.id, post_id: post.id });
-      const n = new Set(savedIds); n.add(post.id); setSavedIds(n);
+      const n2 = new Set(savedIds); n2.add(post.id); setSavedIds(n2);
     }
   }
   async function loadMsgs() {
@@ -447,10 +490,10 @@ function Feed({ profile, cities }) {
   function commentCount(p) { return p.comments?.[0]?.count || 0; }
 
   const cardProps = (p) => ({
-    post: p, voted: votedIds.has(p.id), useful: usefulCount(p), comments: commentCount(p),
+    post: p, voted: votedIds.has(p.id) || optimisticLiked.has(p.id), useful: usefulCount(p), comments: commentCount(p),
     onLike: toggleUseful, onComments: () => setSheet({ type: "comments", post: p }),
     onShare: () => sharePost(p), onReport: () => setSheet({ type: "report", post: p }),
-    saved: savedIds.has(p.id), onSave: () => toggleSave(p),
+    saved: savedIds.has(p.id) || optimisticSaved.has(p.id), onSave: () => toggleSave(p),
     onPin: () => togglePin(p.id, p.is_pinned), onMessage: p.user_id !== profile.id ? () => openChatWith(p.user_id, p.profiles?.username) : null,
     canPin: profile.is_admin,
     city: cityName, cat: categoryLabel
@@ -524,7 +567,7 @@ function Feed({ profile, cities }) {
 
       {sheet && sheet.type === "search" && (
         <Sheet title="بحث في كل المدن" onClose={() => setSheet(null)}>
-          <input placeholder="ابحث عن منشور..." value={sQ} onChange={(e) => setSQ(e.target.value)} />
+          <input placeholder="ابحث عن منشور..." value={sQ} onChange={(e) => { setSQ(e.target.value); if (debounceTimer.current) clearTimeout(debounceTimer.current); debounceTimer.current = setTimeout(() => doSearch(e.target.value), 400); }} />
           <button className="btn1" onClick={doSearch}>{sBusy ? "جاري البحث..." : "بحث"}</button>
           {sRes.map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
           {sRes.length === 0 && sQ && !sBusy && <div className="empty">لا نتائج.</div>}
