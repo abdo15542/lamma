@@ -258,8 +258,6 @@ const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike,
       </div>
     </article>
   );
-}
-
 });
 
 function Feed({ profile, cities }) {
