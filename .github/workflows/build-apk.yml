@@ -12,51 +12,59 @@ jobs:
   build-apk:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout lamma
+        uses: actions/checkout@v4
+
       - name: Fetch signing keys
         uses: actions/checkout@v4
         with:
           repository: abdo15542/lamma-keys
           token: ${{ secrets.KEYS_PAT }}
           path: keys
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
+
       - name: Install dependencies
         run: npm install
+
       - name: Build web app
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_BUILD_SHA: ${{ github.sha }}
         run: npm run build
+
       - name: Add Android platform
         run: npx cap add android
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
       - name: Generate app icons
         run: |
           npm i -D @capacitor/assets
           npx @capacitor/assets generate --android --iconBackgroundColor '#0f766e' || true
-      - name: Sync Capacitor
-        run: npx cap sync android
-      - name: Accept licenses
-        run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+
       - name: Configure fixed signing
         env:
           KS_PASS: ${{ secrets.KS_PASS }}
         run: |
+          echo "lammaStorePassword=$KS_PASS" >> android/gradle.properties
           cat >> android/app/build.gradle << 'GRADLE'
           android {
             signingConfigs {
               lamma {
                 storeFile file("../../keys/lamma.keystore")
-                storePassword System.getenv("KS_PASS")
+                storePassword project.findProperty("lammaStorePassword") ?: System.getenv("KS_PASS")
                 keyAlias "lamma"
-                keyPassword System.getenv("KS_PASS")
+                keyPassword project.findProperty("lammaStorePassword") ?: System.getenv("KS_PASS")
               }
             }
             buildTypes {
@@ -64,22 +72,21 @@ jobs:
             }
           }
           GRADLE
+
       - name: Build debug APK
+        env:
+          KS_PASS: ${{ secrets.KS_PASS }}
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: lamma-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
-      - name: Force-move latest tag
-        run: |
-          git config user.name github-actions
-          git config user.email github-actions@github.com
-          git tag -f latest "${{ github.sha }}"
-          git push -f origin refs/tags/latest
+
       - name: Publish auto release
         uses: softprops/action-gh-release@v2
         with:
@@ -90,3 +97,10 @@ jobs:
           make_latest: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Force-move latest tag
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git tag -f latest "${{ github.sha }}"
+          git push -f origin refs/tags/latest
