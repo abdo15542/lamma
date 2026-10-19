@@ -32,7 +32,8 @@ const PATHS = {
   chart: "M3 3v18h18M7 15l4-4 4 4 5-5",
   edit: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z",
   trash: "M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14",
-  expand: "M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"
+  expand: "M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7",
+  vid: "M23 7l-7 5 7 5V7zM1 5h15v14H1z"
 };
 
 function Icon({ n, s = 24, f = false }) {
@@ -51,6 +52,23 @@ function timeAgo(t) {
   return Math.floor(s / 86400) + " يوم";
 }
 function avaLetter(n) { const s = String(n || "").replace(/^ال/, ""); return s[0] || "؟"; }
+function compressImg(file, max) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      if (w > max || h > max) { const r = Math.min(max / w, max / h); w = Math.round(w * r); h = Math.round(h * r); }
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      c.getContext("2d").drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      c.toBlob((b) => resolve(b || file), "image/jpeg", 0.8);
+    };
+    img.onerror = () => resolve(file);
+    img.src = url;
+  });
+}
 function activityBadge(n) {
   if (n >= 100) return "🏆 أسطورة لَمّة";
   if (n >= 30) return "🥇 عضو مخضرم";
@@ -209,7 +227,7 @@ const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike,
     <article className={"post " + (post.is_pinned ? "pinned" : "")}>
       <div className="phead">
         <button className="pwho-btn" onClick={onOpenProfile}>
-          <span className="ava sm">{avaLetter(post.profiles?.username)}</span>
+          {post.profiles?.avatar_url ? <img className="ava sm" style={{ objectFit: "cover" }} src={post.profiles.avatar_url} alt="" /> : <span className="ava sm">{avaLetter(post.profiles?.username)}</span>}
           <div className="pwho">
             <b>{post.is_pinned && <span className="pinned-label">📌 مثبّت</span>}@{post.profiles?.username}{post.profiles?.is_admin && <span style={{ color: "#0f766e" }}> ✓</span>}</b>
             <span>{city(post.city_id)} • {timeAgo(post.created_at)}</span>
@@ -272,6 +290,10 @@ function Feed({ profile, cities }) {
   const [follows, setFollows] = useState([]);
   const [sheet, setSheet] = useState(null);
   const [sheetLoading, setSheetLoading] = useState(false);
+  const [videos, setVideos] = useState([]);
+  const [videoTitle, setVideoTitle] = useState("");
+  const [videoFile, setVideoFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
   const [events, setEvents] = useState([]);
   const [sortBy, setSortBy] = useState("new");
   const [evTitle, setEvTitle] = useState("");
@@ -373,6 +395,7 @@ function Feed({ profile, cities }) {
     }, 5000);
     return () => clearTimeout(t);
   }, [storyView]);
+  useEffect(() => { if (tab === "video") loadVideos(); }, [tab, selectedCityId]);
   function flashNotice(msg) {
     setNotice(msg);
     if (noticeTimer) clearTimeout(noticeTimer);
@@ -390,7 +413,7 @@ function Feed({ profile, cities }) {
   }
   async function loadPosts() {
     setSkel(true);
-    const sel = "*, profiles!posts_user_id_fkey(username, is_admin), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count), poll_options(id, label, position, poll_votes(count))";
+    const sel = "*, profiles!posts_user_id_fkey(username, is_admin, avatar_url), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count), poll_options(id, label, position, poll_votes(count))";
     let q = supabase.from("posts").select(sel).order("is_pinned", { ascending: false }).order("created_at", { ascending: false }).limit(100);
     if (tab === "home") q = q.eq("city_id", selectedCityId);
     if (catFilter) q = q.eq("category", catFilter);
@@ -594,7 +617,7 @@ function Feed({ profile, cities }) {
     if (!q || !q.trim()) { setSRes([]); return; }
     setSBusy(true);
     const term = "%" + q.trim() + "%";
-    const { data } = await supabase.from("posts").select("*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)").or("title.ilike." + term + ",body.ilike." + term).order("created_at", { ascending: false }).limit(20);
+    const { data } = await supabase.from("posts").select("*, profiles!posts_user_id_fkey(username, avatar_url), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)").or("title.ilike." + term + ",body.ilike." + term).order("created_at", { ascending: false }).limit(20);
     setSRes(data || []); setSBusy(false);
   }
   function ts(e) { if (window.scrollY <= 0) setStartY(e.touches[0].clientY); }
@@ -605,7 +628,7 @@ function Feed({ profile, cities }) {
     setSheetLoading(true);
     const [pr, ps, cc] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", userId).maybeSingle(),
-      supabase.from("posts").select("*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)").eq("user_id", userId).order("created_at", { ascending: false }).limit(30),
+      supabase.from("posts").select("*, profiles!posts_user_id_fkey(username, avatar_url), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)").eq("user_id", userId).order("created_at", { ascending: false }).limit(30),
       supabase.from("comments").select("*", { count: "exact", head: true }).eq("user_id", userId)
     ]);
     const [fc, fme, myf] = await Promise.all([
@@ -618,7 +641,7 @@ function Feed({ profile, cities }) {
     setSheetLoading(false);
   }
   async function openPostById(postId) {
-    const { data } = await supabase.from("posts").select("*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)").eq("id", postId).maybeSingle();
+    const { data } = await supabase.from("posts").select("*, profiles!posts_user_id_fkey(username, avatar_url), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)").eq("id", postId).maybeSingle();
     if (data) setSheet({ type: "post", post: data });
     else flashNotice("المنشور غير متاح (ربما حُذف)");
   }
@@ -715,6 +738,31 @@ function Feed({ profile, cities }) {
     closeSheet(); flashNotice("تم نشر الحدث 📅"); loadEvents();
   }
   async function deleteEvent(id) { await supabase.from("events").delete().eq("id", id); loadEvents(); }
+  const viewedSet = useRef(new Set());
+  async function loadVideos() {
+    const { data } = await supabase.from("videos").select("*, profiles!videos_user_id_fkey(username)").eq("city_id", selectedCityId).order("created_at", { ascending: false }).limit(30);
+    setVideos(data || []);
+  }
+  function pickVideo(f) {
+    if (f && f.size > 30 * 1048576) { flashNotice("الفيديو أكبر من 30 م.ب — اختر مقطعًا أقصر"); return; }
+    setVideoFile(f);
+  }
+  async function addVideo() {
+    setUploading(true);
+    const ext = (videoFile.name.split(".").pop() || "mp4").replace(/[^a-z0-9]/gi, "");
+    const path = profile.id + "/vid-" + Date.now() + "." + ext;
+    const { error: ue } = await supabase.storage.from("videos").upload(path, videoFile, { contentType: videoFile.type || "video/mp4" });
+    if (ue) { flashNotice("فشل رفع الفيديو: " + ue.message); setUploading(false); return; }
+    const url = supabase.storage.from("videos").getPublicUrl(path).data.publicUrl;
+    await supabase.from("videos").insert({ user_id: profile.id, city_id: selectedCityId, title: videoTitle.trim(), video_url: url });
+    setVideoTitle(""); setVideoFile(null); setUploading(false); closeSheet(); flashNotice("تم نشر الفيديو 🎬"); loadVideos();
+  }
+  async function deleteVideo(id) { await supabase.from("videos").delete().eq("id", id); flashNotice("تم حذف الفيديو 🗑"); loadVideos(); }
+  async function bumpViews(v) {
+    if (viewedSet.current.has(v.id)) return;
+    viewedSet.current.add(v.id);
+    await supabase.from("videos").update({ views: (v.views || 0) + 1 }).eq("id", v.id);
+  }
   async function logout() { await supabase.auth.signOut(); }
 
   const cardProps = (p) => ({
@@ -805,6 +853,27 @@ function Feed({ profile, cities }) {
           {!skel && sortedPosts.filter((p) => !blockedIds.has(p.user_id)).map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
         </div>
       )}
+      {tab === "video" && (
+        <div>
+          <div className="cityline"><b>🎬 فيديوهات {cityName(selectedCityId)}</b>
+            <button className="chip" onClick={() => setSheet({ type: "videonew" })}>+ أضف فيديو</button>
+          </div>
+          {videos.length === 0 && <div className="empty">لا فيديوهات بعد في {cityName(selectedCityId)}.<br />كن أول من ينشر فيديو!</div>}
+          {videos.map((v) => (
+            <div className="card2" key={v.id}>
+              <div className="phead" style={{ padding: 0 }}>
+                <button className="pwho-btn" onClick={() => openProfile(v.user_id)}>
+                  <span className="ava sm">{avaLetter(v.profiles?.username)}</span>
+                  <div className="pwho"><b>@{v.profiles?.username}</b><span>{timeAgo(v.created_at)} · 👁 {v.views || 0}</span></div>
+                </button>
+                {(v.user_id === profile.id || profile.is_admin) && <button className="ibtn" onClick={() => deleteVideo(v.id)}><Icon n="trash" s={18} /></button>}
+              </div>
+              <b>{v.title}</b>
+              <div className="vwrap"><video src={v.video_url} controls playsInline preload="metadata" onPlay={() => bumpViews(v)} /></div>
+            </div>
+          ))}
+        </div>
+      )}
       {tab === "pulse" && <Pulse profile={profile} cities={cities} onOpen={(p) => setSheet({ type: "post", post: p })} />}
       {tab === "follows" && (
         <>
@@ -855,6 +924,7 @@ function Feed({ profile, cities }) {
       {showTop && <button className="totop" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>⬆</button>}
       <nav className="bottom">
         <button className={tab === "home" ? "on" : ""} onClick={() => setTab("home")}><Icon n="home" /></button>
+        <button className={tab === "video" ? "on" : ""} onClick={() => setTab("video")}><Icon n="vid" /></button>
         <button className={tab === "pulse" ? "on" : ""} onClick={() => setTab("pulse")}><Icon n="comp" /></button>
         <button className="addbtn" onClick={() => { try { const d = JSON.parse(localStorage.getItem("lamma-draft") || "null"); if (d && !title && !body) { setTitle(d.t || ""); setBody(d.b || ""); } } catch (e2) {} setSheet({ type: "compose" }); }}><Icon n="plus" /></button>
         <button className={tab === "follows" ? "on" : ""} onClick={() => setTab("follows")}><Icon n="heart" /></button>
@@ -985,8 +1055,9 @@ function Feed({ profile, cities }) {
           {sheetLoading && skelRow}
           {!sheetLoading && profView && profView.pr && (
             <>
+              {profView.pr.cover_url && <div className="cover" style={{ backgroundImage: "url(" + profView.pr.cover_url + ")" }} />}
               <div className="mehead">
-                <span className="ava">{avaLetter(profView.pr.username)}</span>
+                {profView.pr.avatar_url ? <img className="ava" style={{ width: 72, height: 72, objectFit: "cover" }} src={profView.pr.avatar_url} alt="" /> : <span className="ava">{avaLetter(profView.pr.username)}</span>}
                 <b>@{profView.pr.username}</b>
                 <span className="muted">{cityName(profView.pr.city_id)} • عضو منذ {new Date(profView.pr.joined_at || Date.now()).toLocaleDateString("ar-LY")}</span>
                 {profView.pr.bio && <div style={{ fontSize: 14, color: "#444", textAlign: "center" }}>{profView.pr.bio}</div>}
@@ -1006,7 +1077,10 @@ function Feed({ profile, cities }) {
                 <div className="stat-cell"><b>{profView.cCount}</b><span>تعليق</span></div>
               </div>
               {profView.pr.id !== profile.id && (
-                <button className="btn1" onClick={() => openChatWith(profView.pr.id, profView.pr.username)}>📨 مراسلة</button>
+                <>
+                  <button className="btn1" onClick={() => openChatWith(profView.pr.id, profView.pr.username)}>📨 مراسلة</button>
+              <button className="btn2" onClick={() => { const t = "👤 @" + profView.pr.username + " على لَمّة - " + cityName(profView.pr.city_id) + "\n" + (profView.pr.bio || "") + "\nحمّل التطبيق: https://github.com/abdo15542/lamma/releases/tag/latest"; navigator.clipboard && navigator.clipboard.writeText(t); flashNotice("تم نسخ بطاقة الملف 🔗"); }}>🔗 مشاركة الملف</button>
+                </>
               )}
               {profView.ps.map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
               {profView.ps.length === 0 && <div className="empty">لا منشورات بعد.</div>}
@@ -1028,6 +1102,15 @@ function Feed({ profile, cities }) {
           <input type="datetime-local" value={evDate} onChange={(e) => setEvDate(e.target.value)} style={{ marginTop: 8 }} />
           <textarea placeholder="تفاصيل (اختياري)" value={evBody} onChange={(e) => setEvBody(e.target.value)} maxLength={600} style={{ marginTop: 8 }} />
           <button className="btn1" onClick={addEvent}>نشر الحدث</button>
+        </Sheet>
+      )}
+      {sheet && sheet.type === "videonew" && (
+        <Sheet title="🎬 فيديو جديد" onClose={closeSheet}>
+          <input placeholder="عنوان الفيديو" value={videoTitle} onChange={(e) => setVideoTitle(e.target.value)} maxLength={120} />
+          <input type="file" accept="video/*" onChange={(e) => pickVideo(e.target.files[0] || null)} style={{ marginTop: 8 }} />
+          {videoFile && <div className="muted">📎 {videoFile.name} ({(videoFile.size / 1048576).toFixed(1)} م.ب)</div>}
+          <div className="muted">سيُنشر في: {cityName(selectedCityId)} · الحد الأقصى 30 م.ب</div>
+          <button className="btn1" disabled={!videoTitle || !videoFile || uploading} onClick={addVideo}>{uploading ? "جاري الرفع..." : "نشر الفيديو"}</button>
         </Sheet>
       )}
       {sheet && sheet.type === "compose" && (
@@ -1060,7 +1143,7 @@ function Pulse({ profile, cities, onOpen }) {
   const [items, setItems] = useState([]);
   useEffect(() => { load(); }, []);
   async function load() {
-    const { data } = await supabase.from("posts").select("*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count)").order("created_at", { ascending: false }).limit(100);
+    const { data } = await supabase.from("posts").select("*, profiles!posts_user_id_fkey(username, avatar_url), useful_votes!useful_votes_post_id_fkey(count)").order("created_at", { ascending: false }).limit(100);
     const list = (data || []).map((p) => ({ ...p, vc: p.useful_votes?.[0]?.count || 0 })).filter((p) => p.vc > 0 && p.city_id !== profile.city_id).sort((a, b) => b.vc - a.vc).slice(0, 30);
     setItems(list);
     const cnt = {};
@@ -1132,13 +1215,37 @@ function Admin() {
 }
 
 function Me({ profile, cities, onInvite, onSaves, onStats, onEditBio, onMyPosts }) {
+  const [me, setMe] = useState(profile);
+  async function uploadAvatar(file) {
+    const blob = await compressImg(file, 256);
+    const path = profile.id + "/avatar-" + Date.now() + ".jpg";
+    const { error } = await supabase.storage.from("post-images").upload(path, blob, { contentType: "image/jpeg" });
+    if (error) { flashNotice("فشل رفع الشعار"); return; }
+    const url = supabase.storage.from("post-images").getPublicUrl(path).data.publicUrl;
+    await supabase.from("profiles").update({ avatar_url: url }).eq("id", profile.id);
+    setMe((m) => ({ ...m, avatar_url: url })); flashNotice("تم تحديث شعارك 📷");
+  }
+  async function uploadCover(file) {
+    const blob = await compressImg(file, 1024);
+    const path = profile.id + "/cover-" + Date.now() + ".jpg";
+    const { error } = await supabase.storage.from("post-images").upload(path, blob, { contentType: "image/jpeg" });
+    if (error) { flashNotice("فشل رفع الغلاف"); return; }
+    const url = supabase.storage.from("post-images").getPublicUrl(path).data.publicUrl;
+    await supabase.from("profiles").update({ cover_url: url }).eq("id", profile.id);
+    setMe((m) => ({ ...m, cover_url: url })); flashNotice("تم تحديث غلافك 🖼");
+  }
   const [copied, setCopied] = useState(false);
   function cityName(id) { return cities.find((c) => c.id === Number(id))?.name || ""; }
   async function invite() { await onInvite(); setCopied(true); setTimeout(() => setCopied(false), 2500); }
   return (
     <div>
-      <div className="mehead">
-        <span className="ava">{avaLetter(profile.username)}</span>
+      <div style={{ position: "relative" }}>
+        <div className="cover" style={{ backgroundImage: me.cover_url ? "url(" + me.cover_url + ")" : "linear-gradient(135deg,#0f766e,#134e4a)" }} />
+        <label className="chip" style={{ position: "absolute", top: 8, insetInlineStart: 8, background: "#fff" }}>🖼 غلاف<input type="file" accept="image/*" hidden onChange={(e) => e.target.files[0] && uploadCover(e.target.files[0])} /></label>
+      </div>
+      <div className="mehead" style={{ marginTop: -46 }}>
+        {me.avatar_url ? <img className="ava" style={{ width: 84, height: 84, objectFit: "cover", border: "3px solid #fff" }} src={me.avatar_url} alt="" /> : <span className="ava" style={{ width: 84, height: 84, fontSize: 34 }}>{avaLetter(me.username)}</span>}
+        <label className="chip" style={{ background: "#fff" }}>📷 الشعار<input type="file" accept="image/*" hidden onChange={(e) => e.target.files[0] && uploadAvatar(e.target.files[0])} /></label>
         <b style={{ fontSize: 18 }}>@{profile.username} {profile.is_admin ? "👑" : ""}</b>
         <span className="muted">{cityName(profile.city_id)}</span>
         {profile.bio && <div style={{ fontSize: 14, color: "#444", textAlign: "center", marginTop: 6 }}>{profile.bio}</div>}
