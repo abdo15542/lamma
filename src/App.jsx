@@ -235,7 +235,7 @@ function Sheet({ title, onClose, children }) {
   );
 }
 
-const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, onReport, city, cat, saved, onSave, onPin, onMessage, canPin, onDelete, onOpenProfile, onZoom, onEdit, myVotes, votePoll, onSeller }) {
+const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, onReport, city, cat, saved, onSave, onPin, onMessage, canPin, onDelete, onOpenProfile, onZoom, onEdit, myVotes, votePoll, onSeller, rxnCount, rxnMine, onReact }) {
   const [boom, setBoom] = useState(false);
   function dbl() { if (!voted) onLike(post.id); setBoom(true); setTimeout(() => setBoom(false), 800); }
   return (
@@ -279,7 +279,7 @@ const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike,
         {REACTIONS.map((r) => {
           const c = rxnCount[post.id + ":" + r.k] || 0;
           const mine = rxnMine.some((x) => x.post_id === post.id && x.reaction === r.k);
-          return <button key={r.k} className={mine ? "mine" : ""} onClick={() => toggleReaction(post.id, r.k)}>{r.e} {c > 0 ? c : ""}</button>;
+          return <button key={r.k} className={mine ? "mine" : ""} onClick={() => onReact(post.id, r.k)}>{r.e} {c > 0 ? c : ""}</button>;
         })}
       </div>
       <div className="pacts">
