@@ -202,7 +202,7 @@ function Sheet({ title, onClose, children }) {
   );
 }
 
-const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, onReport, city, cat, saved, onSave, onPin, onMessage, canPin, onDelete, onOpenProfile, onZoom, onEdit, myVotes, votePoll }) {
+const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, onReport, city, cat, saved, onSave, onPin, onMessage, canPin, onDelete, onOpenProfile, onZoom, onEdit, myVotes, votePoll, onSeller }) {
   const [boom, setBoom] = useState(false);
   function dbl() { if (!voted) onLike(post.id); setBoom(true); setTimeout(() => setBoom(false), 800); }
   return (
@@ -256,6 +256,7 @@ const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike,
       </div>
       <div className="pcap">
         <b>{useful} مفيد</b> · <b>@{post.profiles?.username}</b> <b>{hashTags(post.title)}</b> — {hashTags(post.body)}
+        {onSeller && <div><button className="chip" style={{ marginTop: 6 }} onClick={onSeller}>🤝 تواصل مع البائع</button></div>}
         {comments > 0 && <div className="muted">عرض كل التعليقات ({comments})</div>}
       </div>
     </article>
@@ -271,6 +272,12 @@ function Feed({ profile, cities }) {
   const [follows, setFollows] = useState([]);
   const [sheet, setSheet] = useState(null);
   const [sheetLoading, setSheetLoading] = useState(false);
+  const [events, setEvents] = useState([]);
+  const [sortBy, setSortBy] = useState("new");
+  const [evTitle, setEvTitle] = useState("");
+  const [evBody, setEvBody] = useState("");
+  const [evLoc, setEvLoc] = useState("");
+  const [evDate, setEvDate] = useState("");
   const [notice, setNotice] = useState("");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -338,6 +345,7 @@ function Feed({ profile, cities }) {
   }, []);
   useEffect(() => { if (tab === "home" || tab === "follows") loadPosts(); }, [selectedCityId, tab, follows, catFilter]);
   useEffect(() => { if (sheet && sheet.type === "comments") loadComments(sheet.post.id); }, [sheet]);
+  useEffect(() => { loadEvents(); }, [selectedCityId]);
 
   useEffect(() => {
     const onScroll = () => setShowTop(window.scrollY > 600);
@@ -518,7 +526,7 @@ function Feed({ profile, cities }) {
         const opts = pollOpts.map((t, i) => ({ t: t.trim(), i })).filter((x) => x.t);
         if (opts.length >= 2) await supabase.from("poll_options").insert(opts.map((x) => ({ post_id: newPost.id, label: x.t, position: x.i })));
       }
-      setTitle(""); setBody(""); setImageFile(null); setImgPrev(null); setAddPoll(false); setPrice(""); setPollOpts(["", "", "", ""]); closeSheet(); flashNotice("تم النشر بنجاح ✅"); loadPosts();
+      setTitle(""); setBody(""); setImageFile(null); setImgPrev(null); setAddPoll(false); setPrice(""); try { localStorage.removeItem("lamma-draft"); } catch (e2) {} setPollOpts(["", "", "", ""]); closeSheet(); flashNotice("تم النشر بنجاح ✅"); loadPosts();
     }
     setBusy(false);
   }
@@ -696,6 +704,17 @@ function Feed({ profile, cities }) {
     const seen = new Set(storySeen); group.items.forEach((it) => seen.add(it.id));
     setStorySeen(seen); localStorage.setItem("lamma-seen", JSON.stringify([...seen]));
   }
+  async function loadEvents() {
+    const { data } = await supabase.from("events").select("*").eq("city_id", selectedCityId).gte("event_date", new Date().toISOString()).order("event_date", { ascending: true }).limit(5);
+    setEvents(data || []);
+  }
+  async function addEvent() {
+    if (!evTitle.trim() || !evDate) { flashNotice("العنوان والتاريخ مطلوبان"); return; }
+    await supabase.from("events").insert({ city_id: selectedCityId, user_id: profile.id, title: evTitle.trim(), body: evBody.trim() || null, location: evLoc.trim() || null, event_date: new Date(evDate).toISOString() });
+    setEvTitle(""); setEvBody(""); setEvLoc(""); setEvDate("");
+    closeSheet(); flashNotice("تم نشر الحدث 📅"); loadEvents();
+  }
+  async function deleteEvent(id) { await supabase.from("events").delete().eq("id", id); loadEvents(); }
   async function logout() { await supabase.auth.signOut(); }
 
   const cardProps = (p) => ({
@@ -712,6 +731,7 @@ function Feed({ profile, cities }) {
     city: cityName, cat: categoryLabel
   });
 
+  const sortedPosts = sortBy === "top" ? [...posts].sort((a, b) => usefulCount(b) - usefulCount(a)) : posts;
   const skelRow = <div className="skpost"><div className="sk head" /><div className="sk img" /></div>;
   return (
     <div className="app">
@@ -764,9 +784,25 @@ function Feed({ profile, cities }) {
             <button className={!catFilter ? "on" : ""} onClick={() => setCatFilter(null)}>الكل</button>
             {categories.map((c) => (<button key={c.id} className={catFilter === c.id ? "on" : ""} onClick={() => setCatFilter(c.id)}>{c.label}</button>))}
           </div>
+          <div className="chips" style={{ padding: "0 14px 8px" }}>
+            <button className={sortBy === "new" ? "on" : ""} onClick={() => setSortBy("new")}>🕒 الأحدث</button>
+            <button className={sortBy === "top" ? "on" : ""} onClick={() => setSortBy("top")}>🔥 الأكثر فائدة</button>
+            <button onClick={() => setSheet({ type: "event" })}>📅 إضافة حدث</button>
+          </div>
+          {events.length > 0 && (
+            <div className="card2" style={{ margin: "0 14px 10px" }}>
+              <h3>📅 أحداث قادمة في {cityName(selectedCityId)}</h3>
+              {events.map((ev) => (
+                <div className="msg-item" key={ev.id}>
+                  <div className="msg-name">{ev.title}<div className="muted" style={{ fontWeight: 400 }}>{new Date(ev.event_date).toLocaleString("ar-LY")}{ev.location ? " · " + ev.location : ""}</div>{ev.body && <div style={{ fontWeight: 400, fontSize: 13 }}>{ev.body}</div>}</div>
+                  {(ev.user_id === profile.id || profile.is_admin) && <button className="ibtn" onClick={() => deleteEvent(ev.id)}><Icon n="trash" s={16} /></button>}
+                </div>
+              ))}
+            </div>
+          )}
           {skel && skelRow}{skel && skelRow}
           {!skel && posts.length === 0 && <div className="empty">لا منشورات بعد في {cityName(selectedCityId)}.<br />كن أول من ينشر!</div>}
-          {!skel && posts.filter((p) => !blockedIds.has(p.user_id)).map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
+          {!skel && sortedPosts.filter((p) => !blockedIds.has(p.user_id)).map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
         </div>
       )}
       {tab === "pulse" && <Pulse profile={profile} cities={cities} onOpen={(p) => setSheet({ type: "post", post: p })} />}
@@ -778,7 +814,7 @@ function Feed({ profile, cities }) {
         </>
       )}
       {tab === "admin" && profile.is_admin && <Admin />}
-      {tab === "me" && <Me profile={profile} cities={cities} onInvite={shareApp} onSaves={() => openSavesWrap()} onStats={() => { loadMyStats(); setSheet({ type: "mystats" }); }} onEditBio={() => setSheet({ type: "bio" })} />}
+      {tab === "me" && <Me profile={profile} cities={cities} onInvite={shareApp} onSaves={() => openSavesWrap()} onStats={() => { loadMyStats(); setSheet({ type: "mystats" }); }} onEditBio={() => setSheet({ type: "bio" })} onMyPosts={() => openProfile(profile.id)} />}
       {storyView && storyView.all[storyView.i] && (
         <div className="overlay" style={{ alignItems: "stretch" }} onClick={() => setStoryView((v) => (v && v.i < v.all.length - 1 ? { ...v, i: v.i + 1 } : null))}>
           <div style={{ position: "relative", width: "100%", height: "100%", background: "#000" }}>
@@ -789,6 +825,7 @@ function Feed({ profile, cities }) {
             <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: 14, background: "linear-gradient(transparent, rgba(0,0,0,.7))", color: "#fff", zIndex: 3 }}>
               <b>@{storyView.all[storyView.i].profiles?.username}</b> · {timeAgo(storyView.all[storyView.i].created_at)}
               {storyView.all[storyView.i].body && <div>{storyView.all[storyView.i].body}</div>}
+              <button className="chip" style={{ marginTop: 6, background: "#fff" }} onClick={(e) => { e.stopPropagation(); const a = storyView.all[storyView.i]; setStoryView(null); openChatWith(a.user_id, a.profiles?.username); }}>💬 رد على القصة</button>
             </div>
             <button className="ibtn" style={{ position: "absolute", top: 18, right: 8, color: "#fff", zIndex: 4 }} onClick={(e) => { e.stopPropagation(); setStoryView(null); }}>✕</button>
             <button className="ibtn" style={{ position: "absolute", top: "45%", left: 8, color: "#fff", zIndex: 4 }} onClick={(e) => { e.stopPropagation(); setStoryView((v) => (v && v.i > 0 ? { ...v, i: v.i - 1 } : v)); }}>‹</button>
@@ -819,7 +856,7 @@ function Feed({ profile, cities }) {
       <nav className="bottom">
         <button className={tab === "home" ? "on" : ""} onClick={() => setTab("home")}><Icon n="home" /></button>
         <button className={tab === "pulse" ? "on" : ""} onClick={() => setTab("pulse")}><Icon n="comp" /></button>
-        <button className="addbtn" onClick={() => setSheet({ type: "compose" })}><Icon n="plus" /></button>
+        <button className="addbtn" onClick={() => { try { const d = JSON.parse(localStorage.getItem("lamma-draft") || "null"); if (d && !title && !body) { setTitle(d.t || ""); setBody(d.b || ""); } } catch (e2) {} setSheet({ type: "compose" }); }}><Icon n="plus" /></button>
         <button className={tab === "follows" ? "on" : ""} onClick={() => setTab("follows")}><Icon n="heart" /></button>
         <button className={tab === "me" ? "on" : ""} onClick={() => setTab("me")}><Icon n="user" /></button>
       </nav>
@@ -984,12 +1021,21 @@ function Feed({ profile, cities }) {
           <button className="btn1" onClick={saveEditPost}>حفظ التعديلات</button>
         </Sheet>
       )}
+      {sheet && sheet.type === "event" && (
+        <Sheet title={"📅 حدث جديد في " + cityName(selectedCityId)} onClose={closeSheet}>
+          <input placeholder="عنوان الحدث" value={evTitle} onChange={(e) => setEvTitle(e.target.value)} maxLength={120} />
+          <input placeholder="المكان (اختياري)" value={evLoc} onChange={(e) => setEvLoc(e.target.value)} style={{ marginTop: 8 }} />
+          <input type="datetime-local" value={evDate} onChange={(e) => setEvDate(e.target.value)} style={{ marginTop: 8 }} />
+          <textarea placeholder="تفاصيل (اختياري)" value={evBody} onChange={(e) => setEvBody(e.target.value)} maxLength={600} style={{ marginTop: 8 }} />
+          <button className="btn1" onClick={addEvent}>نشر الحدث</button>
+        </Sheet>
+      )}
       {sheet && sheet.type === "compose" && (
         <Sheet title="منشور جديد" onClose={closeSheet}>
           <div className="chips">{categories.map((c) => (<button key={c.id} className={category === c.id ? "on" : ""} onClick={() => setCategory(c.id)}>{c.label}</button>))}</div>
           {category === "market" && <input placeholder="السعر (مثال: 25 د.ل)" value={price} onChange={(e) => setPrice(e.target.value)} style={{ marginBottom: 8 }} />}
-          <input placeholder="العنوان" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} />
-          <textarea placeholder="اكتب التفاصيل..." value={body} onChange={(e) => setBody(e.target.value)} maxLength={1000} style={{ marginTop: 8 }} />
+          <input placeholder="العنوان" value={title} onChange={(e) => { setTitle(e.target.value); try { localStorage.setItem("lamma-draft", JSON.stringify({ t: e.target.value, b: body })); } catch (e2) {} }} maxLength={120} />
+          <textarea placeholder="اكتب التفاصيل..." value={body} onChange={(e) => { setBody(e.target.value); try { localStorage.setItem("lamma-draft", JSON.stringify({ t: title, b: e.target.value })); } catch (e2) {} }} maxLength={1000} style={{ marginTop: 8 }} />
           <input type="file" accept="image/*" onChange={(e) => pickImage(e.target.files[0] || null)} style={{ marginTop: 8 }} />
           {imgPrev && <img className="imgprev" src={imgPrev} alt="" />}
           <button className="btn2" onClick={() => setAddPoll(!addPoll)}>{addPoll ? "− إزالة الاستطلاع" : "📊 إضافة استطلاع"}</button>
@@ -1085,7 +1131,7 @@ function Admin() {
   );
 }
 
-function Me({ profile, cities, onInvite, onSaves, onStats, onEditBio }) {
+function Me({ profile, cities, onInvite, onSaves, onStats, onEditBio, onMyPosts }) {
   const [copied, setCopied] = useState(false);
   function cityName(id) { return cities.find((c) => c.id === Number(id))?.name || ""; }
   async function invite() { await onInvite(); setCopied(true); setTimeout(() => setCopied(false), 2500); }
@@ -1113,6 +1159,7 @@ function Me({ profile, cities, onInvite, onSaves, onStats, onEditBio }) {
         </ul>
       </div>
       <div className="card2">
+        <button className="btn2" onClick={onMyPosts}>📄 منشوراتي</button>
         <button className="btn2" onClick={onSaves}>🔖 محفوظاتي</button>
         <button className="btn2" onClick={onStats} style={{ marginTop: 8 }}>📊 إحصائياتي</button>
         <button className="btn2" onClick={onEditBio} style={{ marginTop: 8 }}>✏️ تعديل السيرة</button>
