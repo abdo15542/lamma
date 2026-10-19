@@ -69,6 +69,21 @@ function compressImg(file, max) {
     img.src = url;
   });
 }
+const REACTIONS = [
+  { k: "heart", e: "♥", label: "مفيد" },
+  { k: "clap", e: "👏", label: "أحسنت" },
+  { k: "party", e: "🎉", label: "رائع" },
+  { k: "wow", e: "😮", label: "مفاجئ" },
+  { k: "sad", e: "😢", label: "محزن" },
+  { k: "fire", e: "🔥", label: "ناري" }
+];
+const MOODS = ["😊", "🎓", "💪", "🎉", "💔", "🌙", "☕", "📚", "🎯", "✨"];
+
+function CatBadge({ id }) {
+  const m = { services: "خدمات", alerts: "تنبيهات", market: "سوق", talk: "سوالف", travel: "بين المدن" };
+  return <span className={"badge2 badge-cat-" + id}>{m[id] || id}</span>;
+}
+
 function activityBadge(n) {
   if (n >= 100) return "🏆 أسطورة لَمّة";
   if (n >= 30) return "🥇 عضو مخضرم";
@@ -229,11 +244,11 @@ const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike,
         <button className="pwho-btn" onClick={onOpenProfile}>
           {post.profiles?.avatar_url ? <img className="ava sm" style={{ objectFit: "cover" }} src={post.profiles.avatar_url} alt="" /> : <span className="ava sm">{avaLetter(post.profiles?.username)}</span>}
           <div className="pwho">
-            <b>{post.is_pinned && <span className="pinned-label">📌 مثبّت</span>}@{post.profiles?.username}{post.profiles?.is_admin && <span style={{ color: "#0f766e" }}> ✓</span>}</b>
+            <b>{post.is_pinned && <span className="pinned-label">📌 مثبّت</span>}{post.profiles?.mood && <span className="mood">{post.profiles.mood}</span>}@{post.profiles?.username}{post.profiles?.is_admin && <span style={{ color: "#0f766e" }}> ✓</span>}</b>
             <span>{city(post.city_id)} • {timeAgo(post.created_at)}</span>
           </div>
         </button>
-        <span className="badge2">{cat(post.category)}</span>
+        <CatBadge id={post.category} />
         {post.price && <span className="badge2">💰 {post.price}</span>}
       </div>
       {post.image_url && (
@@ -260,6 +275,13 @@ const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike,
           <div className="muted">{(post.poll_options || []).reduce((t, x) => t + (x.poll_votes?.[0]?.count || 0), 0)} صوت</div>
         </div>
       )}
+      <div className="reactions">
+        {REACTIONS.map((r) => {
+          const c = rxnCount[post.id + ":" + r.k] || 0;
+          const mine = rxnMine.some((x) => x.post_id === post.id && x.reaction === r.k);
+          return <button key={r.k} className={mine ? "mine" : ""} onClick={() => toggleReaction(post.id, r.k)}>{r.e} {c > 0 ? c : ""}</button>;
+        })}
+      </div>
       <div className="pacts">
         <button className={"ibtn " + (voted ? "liked liked-pop" : "")} onClick={() => onLike(post.id)}><Icon n="heart" f={voted} /></button>
         <button className="ibtn" onClick={onComments}><Icon n="comment" /></button>
@@ -290,6 +312,10 @@ function Feed({ profile, cities }) {
   const [follows, setFollows] = useState([]);
   const [sheet, setSheet] = useState(null);
   const [sheetLoading, setSheetLoading] = useState(false);
+  const [rxnMine, setRxnMine] = useState([]);
+  const [rxnCount, setRxnCount] = useState({});
+  const [theme, setTheme] = useState(() => localStorage.getItem("lamma-theme") || "lamma");
+  const [mood, setMood] = useState(profile.mood || "");
   const [videos, setVideos] = useState([]);
   const [videoTitle, setVideoTitle] = useState("");
   const [videoFile, setVideoFile] = useState(null);
@@ -358,8 +384,9 @@ function Feed({ profile, cities }) {
     return () => { clearInterval(t); clearInterval(t2); };
   }, []);
   useEffect(() => {
-    document.body.classList.toggle("dark", localStorage.getItem("lamma-dark") === "1");
-  }, []);
+    document.body.className = (localStorage.getItem("lamma-dark") === "1" ? "dark " : "") + "theme-" + theme;
+  }, [theme]);
+  
   useEffect(() => {
     const on = () => setOnline(true), off = () => setOnline(false);
     window.addEventListener("online", on); window.addEventListener("offline", off);
@@ -396,6 +423,16 @@ function Feed({ profile, cities }) {
     return () => clearTimeout(t);
   }, [storyView]);
   useEffect(() => { if (tab === "video") loadVideos(); }, [tab, selectedCityId]);
+  function pickTheme(t) {
+    setTheme(t); localStorage.setItem("lamma-theme", t);
+    flashNotice("تم تغيير الثيم 🎨");
+  }
+  function pickMood(e) {
+    setMood(e);
+    supabase.from("profiles").update({ mood: e }).eq("id", profile.id);
+    flashNotice("تم تحديث حالتك " + e);
+    closeSheet();
+  }
   function flashNotice(msg) {
     setNotice(msg);
     if (noticeTimer) clearTimeout(noticeTimer);
@@ -413,7 +450,7 @@ function Feed({ profile, cities }) {
   }
   async function loadPosts() {
     setSkel(true);
-    const sel = "*, profiles!posts_user_id_fkey(username, is_admin, avatar_url), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count), poll_options(id, label, position, poll_votes(count))";
+    const sel = "*, profiles!posts_user_id_fkey(username, is_admin, avatar_url, mood), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count), poll_options(id, label, position, poll_votes(count))";
     let q = supabase.from("posts").select(sel).order("is_pinned", { ascending: false }).order("created_at", { ascending: false }).limit(100);
     if (tab === "home") q = q.eq("city_id", selectedCityId);
     if (catFilter) q = q.eq("category", catFilter);
@@ -763,6 +800,30 @@ function Feed({ profile, cities }) {
     viewedSet.current.add(v.id);
     await supabase.from("videos").update({ views: (v.views || 0) + 1 }).eq("id", v.id);
   }
+  async function toggleReaction(postId, key) {
+    const mine = rxnMine.filter((r) => r.post_id === postId && r.reaction === key);
+    const rowId = mine[0]?.id;
+    if (rowId) {
+      setRxnMine((a) => a.filter((r) => r.id !== rowId));
+      setRxnCount((m) => ({ ...m, [postId + ":" + key]: Math.max(0, (m[postId + ":" + key] || 1) - 1) }));
+      await supabase.from("reactions").delete().eq("id", rowId);
+    } else {
+      const { data } = await supabase.from("reactions").insert({ post_id: postId, user_id: profile.id, reaction: key }).select();
+      if (data && data[0]) setRxnMine((a) => [...a, data[0]]);
+      setRxnCount((m) => ({ ...m, [postId + ":" + key]: (m[postId + ":" + key] || 0) + 1 }));
+    }
+  }
+  async function loadReactionsFor(list) {
+    if (!list.length) { setRxnMine([]); setRxnCount({}); return; }
+    const ids = list.map((p) => p.id);
+    const [all, mine] = await Promise.all([
+      supabase.from("reactions").select("post_id, reaction").in("post_id", ids),
+      supabase.from("reactions").select("id, post_id, reaction").in("post_id", ids).eq("user_id", profile.id)
+    ]);
+    const cnt = {};
+    (all.data || []).forEach((r) => { const k = r.post_id + ":" + r.reaction; cnt[k] = (cnt[k] || 0) + 1; });
+    setRxnCount(cnt); setRxnMine(mine.data || []);
+  }
   async function logout() { await supabase.auth.signOut(); }
 
   const cardProps = (p) => ({
@@ -787,6 +848,7 @@ function Feed({ profile, cities }) {
       <header className="topbar2">
         <div className="logo">لَمّة</div>
         <div style={{ display: "flex", gap: 6 }}>
+          <button className="ibtn" onClick={() => setSheet({ type: "mood" })}><Icon n="user" s={18} /></button>
           <button className="ibtn" onClick={() => setSheet({ type: "search" })}><Icon n="search" /></button>
           <button className="ibtn" onClick={() => { const d = document.body.classList.toggle("dark"); localStorage.setItem("lamma-dark", d ? "1" : "0"); }}><Icon n="moon" /></button>
           <button className="ibtn" onClick={openInbox} style={{ position: "relative" }}><Icon n="mail" />{unreadMsgs > 0 && <span className="nbadge">{unreadMsgs}</span>}</button>
@@ -1113,6 +1175,16 @@ function Feed({ profile, cities }) {
           <button className="btn1" disabled={!videoTitle || !videoFile || uploading} onClick={addVideo}>{uploading ? "جاري الرفع..." : "نشر الفيديو"}</button>
         </Sheet>
       )}
+      {sheet && sheet.type === "mood" && (
+        <Sheet title="🎭 اختر حالتك اليوم" onClose={closeSheet}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, padding: 8 }}>
+            {MOODS.map((m) => (
+              <button key={m} onClick={() => pickMood(m)} style={{ fontSize: 32, padding: 14, borderRadius: 12, background: mood === m ? "var(--c1)" : "#f1f5f9", color: mood === m ? "#fff" : "#222" }}>{m}</button>
+            ))}
+          </div>
+          <button className="btn2" onClick={() => pickMood("")}>✕ إزالة الحالة</button>
+        </Sheet>
+      )}
       {sheet && sheet.type === "compose" && (
         <Sheet title="منشور جديد" onClose={closeSheet}>
           <div className="chips">{categories.map((c) => (<button key={c.id} className={category === c.id ? "on" : ""} onClick={() => setCategory(c.id)}>{c.label}</button>))}</div>
@@ -1251,6 +1323,24 @@ function Me({ profile, cities, onInvite, onSaves, onStats, onEditBio, onMyPosts 
         {profile.bio && <div style={{ fontSize: 14, color: "#444", textAlign: "center", marginTop: 6 }}>{profile.bio}</div>}
       </div>
       <div className="stats"><span>ليبي 100%</span><span>بدون إعلانات</span><span>مجتمع حقيقي</span></div>
+      <div className="card2">
+        <h3>🎨 اختر مظهر التطبيق</h3>
+        <div className="themes">
+          <button className={"theme-lamma-btn " + (theme === "lamma" ? "on" : "")} onClick={() => pickTheme("lamma")}>لَمّة</button>
+          <button className={"theme-ocean-btn " + (theme === "ocean" ? "on" : "")} onClick={() => pickTheme("ocean")}>محيط 💙</button>
+          <button className={"theme-bloom-btn " + (theme === "bloom" ? "on" : "")} onClick={() => pickTheme("bloom")}>زهرة 💖</button>
+          <button className={"theme-royal-btn " + (theme === "royal" ? "on" : "")} onClick={() => pickTheme("royal")}>ملكي 👑</button>
+        </div>
+        <p className="muted" style={{ textAlign: "center", fontSize: 12 }}>ثيم "محيط" مناسب للأولاد · ثيم "زهرة" مناسب للبنات</p>
+      </div>
+      <div className="card2">
+        <h3>🎭 حالتك اليوم</h3>
+        <div className="chips" style={{ justifyContent: "center" }}>
+          {MOODS.map((m) => (<button key={m} className={mood === m ? "on" : ""} onClick={() => pickMood(m)} style={{ fontSize: 22, padding: "8px 12px" }}>{m}</button>))}
+          <button className="chip" onClick={() => { pickMood(""); }} style={{ padding: "8px 12px" }}>✕ إزالة</button>
+        </div>
+        <p className="muted" style={{ textAlign: "center", fontSize: 12 }}>تظهر بجانب اسمك في منشوراتك</p>
+      </div>
       <div className="card2">
         <h3>عن لَمّة</h3>
         <p className="muted">شبكة اجتماعية ليبية بسيطة تجمع أهل المدينة الواحدة: خدمات، تنبيهات، سوق، سوالف، وتواصل بين المدن.</p>

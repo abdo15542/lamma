@@ -200,3 +200,81 @@ body.dark .clickname{color:#5eead4}
 .cover{height:110px;background-size:cover;background-position:center;border-radius:0 0 16px 16px}
 .bottom button{padding:6px 7px}
 .vwrap video{width:100%;border-radius:12px;background:#000;margin-top:6px}
+
+/* ===== نظام الثيمات (Theme System) ===== */
+:root, body.theme-lamma {
+  --c1: #0f766e; --c2: #14b8a6; --c3: #f0fdfa;
+  --grad: linear-gradient(135deg,#0f766e,#134e4a);
+  --accent: #0f766e; --accent2: #0d9488;
+}
+body.theme-ocean {
+  --c1: #1e40af; --c2: #3b82f6; --c3: #eff6ff;
+  --grad: linear-gradient(135deg,#1e40af,#1e3a8a);
+  --accent: #1e40af; --accent2: #2563eb;
+}
+body.theme-bloom {
+  --c1: #be185d; --c2: #ec4899; --c3: #fdf2f8;
+  --grad: linear-gradient(135deg,#be185d,#831843);
+  --accent: #be185d; --accent2: #db2777;
+}
+body.theme-royal {
+  --c1: #7c3aed; --c2: #a78bfa; --c3: #f5f3ff;
+  --grad: linear-gradient(135deg,#7c3aed,#4c1d95);
+  --accent: #7c3aed; --accent2: #8b5cf6;
+}
+body.dark.theme-ocean { --grad: linear-gradient(135deg,#1e3a8a,#172554); }
+body.dark.theme-bloom { --grad: linear-gradient(135deg,#831843,#500724); }
+body.dark.theme-royal { --grad: linear-gradient(135deg,#4c1d95,#2e1065); }
+
+/* توحيد الألوان بالثيم */
+.logo, .clickname, .hash, .btn1, .bottom button.on, .stories .story.on .ring, .notice { color: var(--c1) !important; }
+.btn1, .addbtn, .chip.on, .stories .story.on .ring { background: var(--c1) !important; color: #fff !important; border-color: var(--c1) !important; }
+.addbtn { background: var(--grad) !important; }
+body.dark .btn1 { color: #fff !important; }
+.stat-cell b, .pinned-label { color: var(--c1) !important; }
+.pinned { border-right-color: var(--c1) !important; }
+.pull.on { color: var(--c1); }
+.topbar2 { background: var(--grad) !important; color: #fff !important; }
+.topbar2 .logo { color: #fff !important; font-weight: 900; font-size: 22px; letter-spacing: 1px; }
+.topbar2 .ibtn { color: #fff !important; }
+.topbar2 .nbadge { background: #fff !important; color: var(--c1) !important; }
+
+/* شارات التصنيفات الملونة */
+.badge-cat-services { background: #dbeafe; color: #1e40af; }
+.badge-cat-alerts { background: #fee2e2; color: #b91c1c; }
+.badge-cat-market { background: #fef3c7; color: #b45309; }
+.badge-cat-talk { background: #f3e8ff; color: #7c3aed; }
+.badge-cat-travel { background: #dcfce7; color: #166534; }
+body.dark .badge-cat-services { background: #1e3a8a; color: #bfdbfe; }
+body.dark .badge-cat-alerts { background: #7f1d1d; color: #fecaca; }
+body.dark .badge-cat-market { background: #78350f; color: #fde68a; }
+body.dark .badge-cat-talk { background: #4c1d95; color: #ddd6fe; }
+body.dark .badge-cat-travel { background: #14532d; color: #bbf7d0; }
+
+/* تفاعلات متعددة */
+.reactions{display:flex;gap:4px;padding:4px 14px;flex-wrap:wrap}
+.reactions button{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:999px;padding:4px 10px;font-size:13px;display:flex;align-items:center;gap:4px}
+.reactions button.mine{background:var(--c3);border-color:var(--c1);color:var(--c1);font-weight:700}
+body.dark .reactions button{background:#1a1a1a;border-color:#333;color:#ddd}
+body.dark .reactions button.mine{background:var(--c3);border-color:var(--c2);color:var(--c2)}
+
+/* حالة المزاج */
+.mood{font-size:14px;margin-right:4px}
+
+/* Skeleton محسن */
+.sk{background:linear-gradient(90deg,#e2e8f0 25%,#f1f5f9 50%,#e2e8f0 75%);background-size:200% 100%;animation:sh 1.6s ease-in-out infinite}
+body.dark .sk{background:linear-gradient(90deg,#1f2937 25%,#374151 50%,#1f2937 75%);background-size:200% 100%}
+
+/* منتقي الثيم */
+.themes{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0}
+.themes button{padding:14px 8px;border:2px solid transparent;border-radius:12px;font-size:12px;font-weight:700;color:#fff}
+.themes button.on{border-color:#222;transform:scale(1.05)}
+body.dark .themes button.on{border-color:#fff}
+.theme-lamma-btn{background:linear-gradient(135deg,#0f766e,#134e4a)}
+.theme-ocean-btn{background:linear-gradient(135deg,#1e40af,#1e3a8a)}
+.theme-bloom-btn{background:linear-gradient(135deg,#be185d,#831843)}
+.theme-royal-btn{background:linear-gradient(135deg,#7c3aed,#4c1d95)}
+
+/* حركات ناعمة */
+.post, .card2, .bottom button { transition: transform .18s ease, box-shadow .18s ease; }
+.post:hover { box-shadow: 0 2px 12px rgba(0,0,0,.06); }
