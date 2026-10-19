@@ -31,7 +31,8 @@ const PATHS = {
   mail: "M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm0 4 8 5 8-5",
   chart: "M3 3v18h18M7 15l4-4 4 4 5-5",
   edit: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z",
-  trash: "M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14"
+  trash: "M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14",
+  expand: "M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"
 };
 
 function Icon({ n, s = 24, f = false }) {
@@ -195,23 +196,26 @@ function Sheet({ title, onClose, children }) {
   );
 }
 
-const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, onReport, city, cat, saved, onSave, onPin, onMessage, canPin, onDelete }) {
+const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, onReport, city, cat, saved, onSave, onPin, onMessage, canPin, onDelete, onOpenProfile, onZoom }) {
   const [boom, setBoom] = useState(false);
   function dbl() { if (!voted) onLike(post.id); setBoom(true); setTimeout(() => setBoom(false), 800); }
   return (
     <article className={"post " + (post.is_pinned ? "pinned" : "")}>
       <div className="phead">
-        <span className="ava sm">{avaLetter(post.profiles?.username)}</span>
-        <div className="pwho">
-          <b>{post.is_pinned && <span className="pinned-label">📌 مثبّت</span>}@{post.profiles?.username}</b>
-          <span>{city(post.city_id)} • {timeAgo(post.created_at)}</span>
-        </div>
+        <button className="pwho-btn" onClick={onOpenProfile}>
+          <span className="ava sm">{avaLetter(post.profiles?.username)}</span>
+          <div className="pwho">
+            <b>{post.is_pinned && <span className="pinned-label">📌 مثبّت</span>}@{post.profiles?.username}</b>
+            <span>{city(post.city_id)} • {timeAgo(post.created_at)}</span>
+          </div>
+        </button>
         <span className="badge2">{cat(post.category)}</span>
       </div>
       {post.image_url && (
         <div onDoubleClick={dbl} style={{ position: "relative" }}>
           <LazyImage src={post.image_url} alt="" />
           {boom && <span className="boom">♥</span>}
+          <button className="zoombtn" onClick={onZoom}><Icon n="expand" s={18} /></button>
         </div>
       )}
       <div className="pacts">
@@ -272,6 +276,9 @@ function Feed({ profile, cities }) {
   const [sRes, setSRes] = useState([]);
   const [sBusy, setSBusy] = useState(false);
   const debounceTimer = useRef(null);
+  const [catFilter, setCatFilter] = useState(null);
+  const [showTop, setShowTop] = useState(false);
+  const [profView, setProfView] = useState(null);
   let noticeTimer = null;
 
   useEffect(() => {
@@ -288,9 +295,14 @@ function Feed({ profile, cities }) {
     window.addEventListener("online", on); window.addEventListener("offline", off);
     return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
   }, []);
-  useEffect(() => { if (tab === "home" || tab === "follows") loadPosts(); }, [selectedCityId, tab, follows]);
+  useEffect(() => { if (tab === "home" || tab === "follows") loadPosts(); }, [selectedCityId, tab, follows, catFilter]);
   useEffect(() => { if (sheet && sheet.type === "comments") loadComments(sheet.post.id); }, [sheet]);
 
+  useEffect(() => {
+    const onScroll = () => setShowTop(window.scrollY > 600);
+    window.addEventListener("scroll", onScroll);
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
   function flashNotice(msg) {
     setNotice(msg);
     if (noticeTimer) clearTimeout(noticeTimer);
@@ -311,6 +323,7 @@ function Feed({ profile, cities }) {
     const sel = "*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)";
     let q = supabase.from("posts").select(sel).order("is_pinned", { ascending: false }).order("created_at", { ascending: false }).limit(100);
     if (tab === "home") q = q.eq("city_id", selectedCityId);
+    if (catFilter) q = q.eq("category", catFilter);
     else if (tab === "follows") q = follows.length ? q.in("city_id", follows) : null;
     if (!q) { setPosts([]); setSkel(false); return; }
     const { data, error } = await q;
@@ -494,6 +507,22 @@ function Feed({ profile, cities }) {
   function ts(e) { if (window.scrollY <= 0) setStartY(e.touches[0].clientY); }
   function tm(e) { if (startY != null && window.scrollY <= 0) { const dy = e.touches[0].clientY - startY; if (dy > 0) setPull(Math.min(dy, 90)); } }
   function te() { if (pull > 60) { loadPosts(); flashNotice("تم التحديث ✔"); } setPull(0); setStartY(null); }
+  async function openProfile(userId) {
+    setSheet({ type: "profile", userId });
+    setSheetLoading(true);
+    const [pr, ps, cc] = await Promise.all([
+      supabase.from("profiles").select("*").eq("id", userId).maybeSingle(),
+      supabase.from("posts").select("*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)").eq("user_id", userId).order("created_at", { ascending: false }).limit(30),
+      supabase.from("comments").select("*", { count: "exact", head: true }).eq("user_id", userId)
+    ]);
+    setProfView({ pr: pr.data, ps: ps.data || [], cCount: cc.count || 0 });
+    setSheetLoading(false);
+  }
+  async function openPostById(postId) {
+    const { data } = await supabase.from("posts").select("*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)").eq("id", postId).maybeSingle();
+    if (data) setSheet({ type: "post", post: data });
+    else flashNotice("المنشور غير متاح (ربما حُذف)");
+  }
   async function logout() { await supabase.auth.signOut(); }
 
   const cardProps = (p) => ({
@@ -504,7 +533,8 @@ function Feed({ profile, cities }) {
     onPin: () => togglePin(p.id, p.is_pinned),
     onMessage: p.user_id !== profile.id ? () => openChatWith(p.user_id, p.profiles?.username) : null,
     canPin: profile.is_admin,
-    onDelete: p.user_id === profile.id ? () => { if (delId === p.id) deletePost(p.id); else { setDelId(p.id); flashNotice("اضغط مرة أخرى لتأكيد الحذف"); setTimeout(() => setDelId(null), 2500); } } : null,
+    onDelete: (p.user_id === profile.id || profile.is_admin) ? () => { if (delId === p.id) deletePost(p.id); else { setDelId(p.id); flashNotice("اضغط مرة أخرى لتأكيد الحذف"); setTimeout(() => setDelId(null), 2500); } } : null,
+    onOpenProfile: () => openProfile(p.user_id), onZoom: () => setSheet({ type: "zoom", src: p.image_url }),
     city: cityName, cat: categoryLabel
   });
 
@@ -542,6 +572,10 @@ function Feed({ profile, cities }) {
               <button className="chip" onClick={() => toggleFollow(selectedCityId)}>{follows.includes(selectedCityId) ? "✓ متابَعة" : "+ متابعة"}</button>
             )}
           </div>
+          <div className="chips" style={{ padding: "0 14px 8px" }}>
+            <button className={!catFilter ? "on" : ""} onClick={() => setCatFilter(null)}>الكل</button>
+            {categories.map((c) => (<button key={c.id} className={catFilter === c.id ? "on" : ""} onClick={() => setCatFilter(c.id)}>{c.label}</button>))}
+          </div>
           {skel && skelRow}{skel && skelRow}
           {!skel && posts.length === 0 && <div className="empty">لا منشورات بعد في {cityName(selectedCityId)}.<br />كن أول من ينشر!</div>}
           {!skel && posts.map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
@@ -557,6 +591,7 @@ function Feed({ profile, cities }) {
       )}
       {tab === "admin" && profile.is_admin && <Admin />}
       {tab === "me" && <Me profile={profile} cities={cities} onInvite={shareApp} onSaves={() => openSavesWrap()} onStats={() => { loadMyStats(); setSheet({ type: "mystats" }); }} onEditBio={() => setSheet({ type: "bio" })} />}
+      {showTop && <button className="totop" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>⬆</button>}
       <nav className="bottom">
         <button className={tab === "home" ? "on" : ""} onClick={() => setTab("home")}><Icon n="home" /></button>
         <button className={tab === "pulse" ? "on" : ""} onClick={() => setTab("pulse")}><Icon n="comp" /></button>
@@ -569,7 +604,7 @@ function Feed({ profile, cities }) {
         <Sheet title="الإشعارات" onClose={closeSheet}>
           {sheetLoading && skelRow}
           {!sheetLoading && nList.map((n) => (
-            <div className="comment" key={n.id}>
+            <div className="comment" key={n.id} style={{ cursor: "pointer" }} onClick={() => { const pid = n.post_id; closeSheet(); if (pid) openPostById(pid); }}>
               <span className="ava sm">{avaLetter(n.profiles?.username)}</span>
               <div>{n.type === "comment" ? "💬 علّق" : "♥ أعجب"} <b>@{n.profiles?.username}</b> على: {n.posts?.title || "منشور"}<div className="muted">{timeAgo(n.created_at)}</div></div>
             </div>
@@ -657,7 +692,7 @@ function Feed({ profile, cities }) {
           {cList.map((c) => (
             <div className="comment" key={c.id}>
               <span className="ava sm">{avaLetter(c.profiles?.username)}</span>
-              <div style={{ flex: 1 }}><b>@{c.profiles?.username}</b> {c.body} {c.user_id === profile.id && <button className="ibtn" style={{ padding: 2 }} onClick={() => deleteComment(c.id)}><Icon n="trash" s={14} /></button>}</div>
+              <div style={{ flex: 1 }}><b className="clickname" onClick={() => openProfile(c.user_id)}>@{c.profiles?.username}</b> {c.body} {c.user_id === profile.id && <button className="ibtn" style={{ padding: 2 }} onClick={() => deleteComment(c.id)}><Icon n="trash" s={14} /></button>}</div>
             </div>
           ))}
           {cList.length === 0 && <div className="empty">لا تعليقات بعد. كن أول من يعلّق!</div>}
@@ -665,6 +700,35 @@ function Feed({ profile, cities }) {
             <input placeholder="أضف تعليقًا..." value={cText} onChange={(e) => setCText(e.target.value)} />
             <button onClick={() => addComment(sheet.post.id)}>إرسال</button>
           </div>
+        </Sheet>
+      )}
+      {sheet && sheet.type === "zoom" && (
+        <div className="overlay" onClick={closeSheet} style={{ alignItems: "center" }}>
+          <img src={sheet.src} alt="" style={{ width: "100%", maxHeight: "92vh", objectFit: "contain" }} />
+        </div>
+      )}
+      {sheet && sheet.type === "profile" && (
+        <Sheet title={"ملف @" + (profView?.pr?.username || "...")} onClose={closeSheet}>
+          {sheetLoading && skelRow}
+          {!sheetLoading && profView && profView.pr && (
+            <>
+              <div className="mehead">
+                <span className="ava">{avaLetter(profView.pr.username)}</span>
+                <b>@{profView.pr.username}</b>
+                <span className="muted">{cityName(profView.pr.city_id)} • عضو منذ {new Date(profView.pr.joined_at || Date.now()).toLocaleDateString("ar-LY")}</span>
+                {profView.pr.bio && <div style={{ fontSize: 14, color: "#444", textAlign: "center" }}>{profView.pr.bio}</div>}
+              </div>
+              <div className="stat-grid">
+                <div className="stat-cell"><b>{profView.ps.length}</b><span>منشور</span></div>
+                <div className="stat-cell"><b>{profView.cCount}</b><span>تعليق</span></div>
+              </div>
+              {profView.pr.id !== profile.id && (
+                <button className="btn1" onClick={() => openChatWith(profView.pr.id, profView.pr.username)}>📨 مراسلة</button>
+              )}
+              {profView.ps.map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
+              {profView.ps.length === 0 && <div className="empty">لا منشورات بعد.</div>}
+            </>
+          )}
         </Sheet>
       )}
       {sheet && sheet.type === "compose" && (
