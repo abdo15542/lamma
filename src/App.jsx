@@ -202,7 +202,7 @@ function Sheet({ title, onClose, children }) {
   );
 }
 
-const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, onReport, city, cat, saved, onSave, onPin, onMessage, canPin, onDelete, onOpenProfile, onZoom, onEdit }) {
+const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, onReport, city, cat, saved, onSave, onPin, onMessage, canPin, onDelete, onOpenProfile, onZoom, onEdit, myVotes, votePoll }) {
   const [boom, setBoom] = useState(false);
   function dbl() { if (!voted) onLike(post.id); setBoom(true); setTimeout(() => setBoom(false), 800); }
   return (
@@ -222,6 +222,23 @@ const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike,
           <LazyImage src={post.image_url} alt="" />
           {boom && <span className="boom">♥</span>}
           <button className="zoombtn" onClick={onZoom}><Icon n="expand" s={18} /></button>
+        </div>
+      )}
+      {(post.poll_options || []).length > 0 && (
+        <div style={{ padding: "0 14px 8px" }}>
+          {(post.poll_options || []).slice().sort((a, b) => a.position - b.position).map((o) => {
+            const total = (post.poll_options || []).reduce((t, x) => t + (x.poll_votes?.[0]?.count || 0), 0) || 0;
+            const c = o.poll_votes?.[0]?.count || 0;
+            const pct = total ? Math.round((c / total) * 100) : 0;
+            const mine = myVotes.has(o.id);
+            return (
+              <button key={o.id} className="pollopt" onClick={() => votePoll(o.id, post.id)} style={{ display: "block", width: "100%", textAlign: "right", margin: "6px 0", padding: "8px 12px", borderRadius: 12, border: mine ? "2px solid #0f766e" : "1px solid #dbdbdb", background: "#fff", position: "relative", overflow: "hidden" }}>
+                <span style={{ position: "absolute", inset: 0, width: pct + "%", background: "rgba(15,118,110,.12)" }} />
+                <span style={{ position: "relative" }}>{o.label} {mine && "✓"} <b style={{ float: "left" }}>{total > 0 ? pct + "%" : ""}</b></span>
+              </button>
+            );
+          })}
+          <div className="muted">{(post.poll_options || []).reduce((t, x) => t + (x.poll_votes?.[0]?.count || 0), 0)} صوت</div>
         </div>
       )}
       <div className="pacts">
@@ -290,11 +307,16 @@ function Feed({ profile, cities }) {
   const [cLikesCount, setCLikesCount] = useState({});
   const [followInfo, setFollowInfo] = useState(null);
   const [editTitle, setEditTitle] = useState("");
+  const [blockedIds, setBlockedIds] = useState(new Set());
+  const [myVotes, setMyVotes] = useState(new Set());
+  const [addPoll, setAddPoll] = useState(false);
+  const [pollOpts, setPollOpts] = useState(["", "", "", ""]);
+  const [peopleRes, setPeopleRes] = useState([]);
   const [editBody, setEditBody] = useState("");
   let noticeTimer = null;
 
   useEffect(() => {
-    loadFollows(); loadUnread(); loadSaves(); loadMsgs();
+    loadFollows(); loadUnread(); loadSaves(); loadMsgs(); loadBlocks();
     const t = setInterval(loadUnread, 30000);
     const t2 = setInterval(loadMsgs, 30000);
     return () => { clearInterval(t); clearInterval(t2); };
@@ -346,7 +368,7 @@ function Feed({ profile, cities }) {
   }
   async function loadPosts() {
     setSkel(true);
-    const sel = "*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)";
+    const sel = "*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count), poll_options(id, label, position, poll_votes(count))";
     let q = supabase.from("posts").select(sel).order("is_pinned", { ascending: false }).order("created_at", { ascending: false }).limit(100);
     if (tab === "home") q = q.eq("city_id", selectedCityId);
     if (catFilter) q = q.eq("category", catFilter);
@@ -357,6 +379,11 @@ function Feed({ profile, cities }) {
     else setPosts(data || []);
     const { data: v } = await supabase.from("useful_votes").select("post_id").eq("user_id", profile.id);
     setVotedIds(new Set((v || []).map((x) => x.post_id)));
+    const optIds = (data || []).flatMap((p) => (p.poll_options || []).map((x) => x.id));
+    if (optIds.length) {
+      const mv = await supabase.from("poll_votes").select("option_id").in("option_id", optIds).eq("user_id", profile.id);
+      setMyVotes(new Set((mv.data || []).map((x) => x.option_id)));
+    } else setMyVotes(new Set());
     setSkel(false);
   }
   async function loadComments(postId) {
@@ -470,9 +497,15 @@ function Feed({ profile, cities }) {
       if (ue) { setMessage("فشل رفع الصورة: " + ue.message); setBusy(false); return; }
       imageUrl = supabase.storage.from("post-images").getPublicUrl(path).data.publicUrl;
     }
-    const { error } = await supabase.from("posts").insert({ user_id: profile.id, city_id: selectedCityId, category, title, body, image_url: imageUrl });
+    const { data: newPost, error } = await supabase.from("posts").insert({ user_id: profile.id, city_id: selectedCityId, category, title, body, image_url: imageUrl }).select();
     if (error) setMessage("خطأ نشر: " + error.message);
-    else { setTitle(""); setBody(""); setImageFile(null); setImgPrev(null); closeSheet(); flashNotice("تم النشر بنجاح ✅"); loadPosts(); }
+    else {
+      if (newPost && addPoll) {
+        const opts = pollOpts.map((t, i) => ({ t: t.trim(), i })).filter((x) => x.t);
+        if (opts.length >= 2) await supabase.from("poll_options").insert(opts.map((x) => ({ post_id: newPost.id, label: x.t, position: x.i })));
+      }
+      setTitle(""); setBody(""); setImageFile(null); setImgPrev(null); setAddPoll(false); setPollOpts(["", "", "", ""]); closeSheet(); flashNotice("تم النشر بنجاح ✅"); loadPosts();
+    }
     setBusy(false);
   }
   async function toggleUseful(postId) {
@@ -572,6 +605,7 @@ function Feed({ profile, cities }) {
       setFollowInfo((f) => ({ ...f, iFollow: false, followers: Math.max(0, (f.followers || 1) - 1) }));
     } else {
       await supabase.from("user_follows").insert({ user_id: profile.id, target_id: userId });
+      await supabase.from("notifications").insert({ user_id: userId, actor_id: profile.id, type: "follow", post_id: null });
       setFollowInfo((f) => ({ ...f, iFollow: true, followers: (f.followers || 0) + 1 }));
     }
   }
@@ -592,6 +626,28 @@ function Feed({ profile, cities }) {
     await supabase.from("posts").update({ title: editTitle, body: editBody }).eq("id", sheet.post.id);
     flashNotice("تم تعديل المنشور ✏️");
     closeSheet(); loadPosts();
+  }
+  async function loadBlocks() {
+    const { data } = await supabase.from("blocks").select("blocked_id").eq("user_id", profile.id);
+    setBlockedIds(new Set((data || []).map((x) => x.blocked_id)));
+  }
+  async function toggleBlock(userId) {
+    if (blockedIds.has(userId)) {
+      await supabase.from("blocks").delete().eq("user_id", profile.id).eq("blocked_id", userId);
+      const n = new Set(blockedIds); n.delete(userId); setBlockedIds(n);
+      flashNotice("تم إلغاء الحظر");
+    } else {
+      await supabase.from("blocks").insert({ user_id: profile.id, blocked_id: userId });
+      const n = new Set(blockedIds); n.add(userId); setBlockedIds(n);
+      flashNotice("تم حظر المستخدم 🚫 لن ترى منشوراته");
+    }
+    loadPosts();
+  }
+  async function votePoll(optionId, postId) {
+    if (myVotes.has(optionId)) { flashNotice("صوتّ بالفعل على هذا الاستطلاع"); return; }
+    await supabase.from("poll_votes").insert({ option_id: optionId, user_id: profile.id });
+    const n = new Set(myVotes); n.add(optionId); setMyVotes(n);
+    setPosts((old) => old.map((p) => p.id === postId ? { ...p, poll_options: (p.poll_options || []).map((o) => o.id === optionId ? { ...o, poll_votes: [{ count: (o.poll_votes?.[0]?.count || 0) + 1 }] } : o) } : p));
   }
   async function logout() { await supabase.auth.signOut(); }
 
@@ -649,7 +705,7 @@ function Feed({ profile, cities }) {
           </div>
           {skel && skelRow}{skel && skelRow}
           {!skel && posts.length === 0 && <div className="empty">لا منشورات بعد في {cityName(selectedCityId)}.<br />كن أول من ينشر!</div>}
-          {!skel && posts.map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
+          {!skel && posts.filter((p) => !blockedIds.has(p.user_id)).map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
         </div>
       )}
       {tab === "pulse" && <Pulse profile={profile} cities={cities} onOpen={(p) => setSheet({ type: "post", post: p })} />}
@@ -657,7 +713,7 @@ function Feed({ profile, cities }) {
         <>
           {follows.length === 0 && <div className="empty">لم تتابع أي مدينة بعد.<br />من تبويب المدينة اضغط "+ متابعة".</div>}
           {skel && skelRow}
-          {!skel && posts.map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
+          {!skel && posts.filter((p) => !blockedIds.has(p.user_id)).map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
         </>
       )}
       {tab === "admin" && profile.is_admin && <Admin />}
@@ -677,7 +733,7 @@ function Feed({ profile, cities }) {
           {!sheetLoading && nList.map((n) => (
             <div className="comment" key={n.id} style={{ cursor: "pointer" }} onClick={() => { const pid = n.post_id; closeSheet(); if (pid) openPostById(pid); }}>
               <span className="ava sm">{avaLetter(n.profiles?.username)}</span>
-              <div>{n.type === "comment" ? "💬 علّق" : "♥ أعجب"} <b>@{n.profiles?.username}</b> على: {n.posts?.title || "منشور"}<div className="muted">{timeAgo(n.created_at)}</div></div>
+              <div>{n.type === "comment" ? "💬 علّق" : n.type === "follow" ? "👥 بدأ متابعتك" : "♥ أعجب"} <b>@{n.profiles?.username}</b> على: {n.posts?.title || "منشور"}<div className="muted">{timeAgo(n.created_at)}</div></div>
             </div>
           ))}
           {!sheetLoading && nList.length === 0 && <div className="empty">لا إشعارات بعد.</div>}
@@ -748,6 +804,18 @@ function Feed({ profile, cities }) {
           <input placeholder="ابحث عن منشور..." value={sQ} onChange={(e) => { setSQ(e.target.value); if (debounceTimer.current) clearTimeout(debounceTimer.current); debounceTimer.current = setTimeout(() => doSearch(e.target.value), 400); }} />
           <button className="btn1" onClick={() => doSearch(sQ)}>{sBusy ? "جاري البحث..." : "بحث"}</button>
           {sRes.map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
+          {peopleRes.length > 0 && (
+            <div className="card2" style={{ margin: "10px 0" }}>
+              <h3>👥 أشخاص</h3>
+              {peopleRes.map((u) => (
+                <div className="msg-item" key={u.id} onClick={() => { closeSheet(); openProfile(u.id); }}>
+                  <span className="ava sm">{avaLetter(u.username)}</span>
+                  <div className="msg-name">@{u.username}</div>
+                  <div className="msg-time">{cityName(u.city_id)}</div>
+                </div>
+              ))}
+            </div>
+          )}
           {sRes.length === 0 && sQ && !sBusy && <div className="empty">لا نتائج.</div>}
         </Sheet>
       )}
@@ -792,7 +860,10 @@ function Feed({ profile, cities }) {
               <div className="cityline" style={{ padding: "4px 0" }}>
                 <span className="muted">{followInfo?.followers || 0} متابع {followInfo?.followsMe && <span className="badge2">يتابعك</span>}</span>
                 {profView.pr.id !== profile.id && (
-                  <button className="chip" onClick={() => toggleFollowUser(profView.pr.id)}>{followInfo?.iFollow ? "✓ تتابعه" : "+ متابعة"}</button>
+                  <>
+                    <button className="chip" onClick={() => toggleFollowUser(profView.pr.id)}>{followInfo?.iFollow ? "✓ تتابعه" : "+ متابعة"}</button>
+                    <button className="chip" style={{ borderColor: "#b91c1c", color: "#b91c1c", marginRight: 6 }} onClick={() => toggleBlock(profView.pr.id)}>{blockedIds.has(profView.pr.id) ? "إلغاء الحظر" : "🚫 حظر"}</button>
+                  </>
                 )}
               </div>
               <div className="muted" style={{ textAlign: "center" }}>{activityBadge(profView.ps.length)}</div>
@@ -823,6 +894,10 @@ function Feed({ profile, cities }) {
           <textarea placeholder="اكتب التفاصيل..." value={body} onChange={(e) => setBody(e.target.value)} maxLength={1000} style={{ marginTop: 8 }} />
           <input type="file" accept="image/*" onChange={(e) => pickImage(e.target.files[0] || null)} style={{ marginTop: 8 }} />
           {imgPrev && <img className="imgprev" src={imgPrev} alt="" />}
+          <button className="btn2" onClick={() => setAddPoll(!addPoll)}>{addPoll ? "− إزالة الاستطلاع" : "📊 إضافة استطلاع"}</button>
+          {addPoll && pollOpts.map((t, i) => (
+            <input key={i} placeholder={"الخيار " + (i + 1)} value={t} onChange={(e) => setPollOpts((a) => a.map((x, j) => (j === i ? e.target.value : x)))} style={{ marginTop: 6 }} />
+          ))}
           <div className="muted">سيُنشر في: {cityName(selectedCityId)}</div>
           <button className="btn1" disabled={busy || !title || !body} onClick={createPost}>نشر</button>
           {message && <div className="error">{message}</div>}
