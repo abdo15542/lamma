@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, memo, useRef } from "react";
+import { useEffect, useState, useRef, memo, Component } from "react";
 import { supabase } from "./lib/supabase";
 
 const BUILD_SHA = typeof __BUILD_SHA__ !== "undefined" ? __BUILD_SHA__ : "dev";
@@ -30,7 +30,8 @@ const PATHS = {
   pin: "M12 2 4 8h3v6l-3 3 8-3 8 3-3-3V8h3z",
   mail: "M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm0 4 8 5 8-5",
   chart: "M3 3v18h18M7 15l4-4 4 4 5-5",
-  edit: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"
+  edit: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z",
+  trash: "M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14"
 };
 
 function Icon({ n, s = 24, f = false }) {
@@ -41,12 +42,6 @@ function Icon({ n, s = 24, f = false }) {
   );
 }
 
-function hashTags(text) {
-  if (!text) return text;
-  const parts = text.split(/(#\w+)/g);
-  return parts.map((p, i) => /^#\w+$/.test(p) ? <span key={i} className="hash">{p}</span> : p);
-}
-
 function timeAgo(t) {
   const s = (Date.now() - new Date(t)) / 1000;
   if (s < 60) return "الآن";
@@ -54,27 +49,42 @@ function timeAgo(t) {
   if (s < 86400) return Math.floor(s / 3600) + " س";
   return Math.floor(s / 86400) + " يوم";
 }
-
 function avaLetter(n) { const s = String(n || "").replace(/^ال/, ""); return s[0] || "؟"; }
+function hashTags(text) {
+  if (!text) return text;
+  const parts = String(text).split(/(#\w+)/g);
+  return parts.map((p, i) => (/^#\w+$/.test(p) ? <span key={i} className="hash">{p}</span> : p));
+}
 
-export default function App() {
+function LazyImage({ src, alt, className }) {
+  const [loaded, setLoaded] = useState(false);
+  const [inView, setInView] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!ref.current) return;
+    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setInView(true); obs.disconnect(); } }, { rootMargin: "200px" });
+    obs.observe(ref.current);
+    return () => obs.disconnect();
+  }, []);
+  return (
+    <div ref={ref} className="pimg">
+      {inView && <img src={src} alt={alt} className={(className || "") + (loaded ? " loaded" : "")} onLoad={() => setLoaded(true)} loading="lazy" />}
+    </div>
+  );
+}
+
+function AppInner() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [cities, setCities] = useState([]);
   const [loading, setLoading] = useState(true);
-
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => { setSession(data.session); setLoading(false); });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => { setSession(s); setLoading(false); });
     loadCities();
-    return () => { subscription.unsubscribe(); };
+    return () => subscription.unsubscribe();
   }, []);
-
-  useEffect(() => {
-    if (session?.user) loadProfile(session.user.id);
-    else setProfile(null);
-  }, [session]);
-
+  useEffect(() => { if (session?.user) loadProfile(session.user.id); else setProfile(null); }, [session]);
   async function loadCities() {
     const { data } = await supabase.from("cities").select("*").order("name", { ascending: true });
     setCities(data || []);
@@ -83,7 +93,6 @@ export default function App() {
     const { data } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
     setProfile(data || null);
   }
-
   if (loading) return <div className="center">جاري التحميل...</div>;
   if (!session) return <Auth cities={cities} />;
   if (!profile) return <SetupProfile user={session.user} cities={cities} onDone={() => loadProfile(session.user.id)} />;
@@ -98,7 +107,6 @@ function Auth({ cities }) {
   const [cityId, setCityId] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-
   async function handleSubmit(e) {
     e.preventDefault(); setBusy(true); setMessage("");
     if (mode === "login") {
@@ -116,7 +124,6 @@ function Auth({ cities }) {
     }
     setBusy(false);
   }
-
   return (
     <div className="center">
       <div className="authcard">
@@ -176,37 +183,6 @@ function SetupProfile({ user, cities, onDone }) {
 }
 
 
-
-function LazyImage({ src, alt, className }) {
-  const [loaded, setLoaded] = useState(false);
-  const [inView, setInView] = useState(false);
-  const ref = useRef(null);
-  
-  useEffect(() => {
-    if (!ref.current) return;
-    const obs = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) { setInView(true); obs.disconnect(); } },
-      { rootMargin: "200px" }
-    );
-    obs.observe(ref.current);
-    return () => obs.disconnect();
-  }, []);
-  
-  return (
-    <div ref={ref} style={{ position: "relative", background: "#f1f5f9" }}>
-      {inView && (
-        <img 
-          src={src} 
-          alt={alt} 
-          className={className + (loaded ? " loaded" : "")}
-          onLoad={() => setLoaded(true)}
-          loading="lazy"
-        />
-      )}
-    </div>
-  );
-}
-
 function Sheet({ title, onClose, children }) {
   return (
     <div className="overlay" onClick={onClose}>
@@ -219,13 +195,9 @@ function Sheet({ title, onClose, children }) {
   );
 }
 
-const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, onReport, city, cat, saved, onSave, onPin, onMessage, canPin }) {
+const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, onReport, city, cat, saved, onSave, onPin, onMessage, canPin, onDelete }) {
   const [boom, setBoom] = useState(false);
-  function dbl() {
-    if (!voted) onLike(post.id);
-    setBoom(true);
-    setTimeout(() => setBoom(false), 800);
-  }
+  function dbl() { if (!voted) onLike(post.id); setBoom(true); setTimeout(() => setBoom(false), 800); }
   return (
     <article className={"post " + (post.is_pinned ? "pinned" : "")}>
       <div className="phead">
@@ -237,8 +209,8 @@ const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike,
         <span className="badge2">{cat(post.category)}</span>
       </div>
       {post.image_url && (
-        <div className="pimg" onDoubleClick={dbl}>
-          <LazyImage src={post.image_url} alt="" className="" />
+        <div onDoubleClick={dbl} style={{ position: "relative" }}>
+          <LazyImage src={post.image_url} alt="" />
           {boom && <span className="boom">♥</span>}
         </div>
       )}
@@ -248,9 +220,10 @@ const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike,
         <button className="ibtn" onClick={onShare}><Icon n="send" /></button>
         <button className="ibtn" onClick={onSave}><Icon n="mark" f={saved} /></button>
         <span className="sp" />
-        <button className="ibtn" onClick={onReport}><Icon n="flag" /></button>
+        {onDelete && <button className="ibtn" onClick={onDelete}><Icon n="trash" /></button>}
         {canPin && <button className="ibtn" onClick={onPin}><Icon n="pin" f={post.is_pinned} /></button>}
         {onMessage && <button className="ibtn" onClick={onMessage}><Icon n="mail" /></button>}
+        <button className="ibtn" onClick={onReport}><Icon n="flag" /></button>
       </div>
       <div className="pcap">
         <b>{useful} مفيد</b> · <b>@{post.profiles?.username}</b> <b>{hashTags(post.title)}</b> — {hashTags(post.body)}
@@ -284,12 +257,14 @@ function Feed({ profile, cities }) {
   const [savedIds, setSavedIds] = useState(new Set());
   const [optimisticSaved, setOptimisticSaved] = useState(new Set());
   const [nList, setNList] = useState([]);
-  const [unreadMsgs, setUnreadMsgs] = useState(0);
-  const [inbox, setInbox] = useState([]);
+  const [svList, setSvList] = useState([]);
   const [myStats, setMyStats] = useState(null);
   const [bioDraft, setBioDraft] = useState(profile.bio || "");
-  const [svList, setSvList] = useState([]);
-  const [dark, setDark] = useState(localStorage.getItem("lamma-dark") === "1");
+  const [unreadMsgs, setUnreadMsgs] = useState(0);
+  const [inbox, setInbox] = useState([]);
+  const [delId, setDelId] = useState(null);
+  const [online, setOnline] = useState(true);
+  const [confirmLogout, setConfirmLogout] = useState(false);
   const [skel, setSkel] = useState(false);
   const [pull, setPull] = useState(0);
   const [startY, setStartY] = useState(null);
@@ -297,30 +272,44 @@ function Feed({ profile, cities }) {
   const [sRes, setSRes] = useState([]);
   const [sBusy, setSBusy] = useState(false);
   const debounceTimer = useRef(null);
+  let noticeTimer = null;
 
-  useEffect(() => { loadFollows(); loadUnread(); loadSaves(); loadMsgs(); const t2 = setInterval(loadMsgs, 30000); const t = setInterval(loadUnread, 30000); return () => { clearInterval(t); clearInterval(t2); }; }, []);
   useEffect(() => {
-    document.body.classList.toggle("dark", dark);
-    localStorage.setItem("lamma-dark", dark ? "1" : "0");
-  }, [dark]);
+    loadFollows(); loadUnread(); loadSaves(); loadMsgs();
+    const t = setInterval(loadUnread, 30000);
+    const t2 = setInterval(loadMsgs, 30000);
+    return () => { clearInterval(t); clearInterval(t2); };
+  }, []);
+  useEffect(() => {
+    document.body.classList.toggle("dark", localStorage.getItem("lamma-dark") === "1");
+  }, []);
+  useEffect(() => {
+    const on = () => setOnline(true), off = () => setOnline(false);
+    window.addEventListener("online", on); window.addEventListener("offline", off);
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
+  }, []);
   useEffect(() => { if (tab === "home" || tab === "follows") loadPosts(); }, [selectedCityId, tab, follows]);
   useEffect(() => { if (sheet && sheet.type === "comments") loadComments(sheet.post.id); }, [sheet]);
 
-  let noticeTimer = null;
   function flashNotice(msg) {
     setNotice(msg);
     if (noticeTimer) clearTimeout(noticeTimer);
     noticeTimer = setTimeout(() => setNotice(""), 2000);
   }
+  function closeSheet() { setSheet(null); setSheetLoading(false); }
+  function cityName(id) { return cities.find((c) => c.id === Number(id))?.name || ""; }
+  function categoryLabel(id) { return categories.find((i) => i.id === id)?.label || id; }
+  function usefulCount(p) { return p.useful_votes?.[0]?.count || 0; }
+  function commentCount(p) { return p.comments?.[0]?.count || 0; }
 
   async function loadFollows() {
     const { data } = await supabase.from("city_follows").select("city_id").eq("user_id", profile.id);
     setFollows((data || []).map((x) => x.city_id));
   }
   async function loadPosts() {
-    const sel = "*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)";
     setSkel(true);
-    let q = supabase.from("posts").select(sel).order("created_at", { ascending: false }).limit(100);
+    const sel = "*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)";
+    let q = supabase.from("posts").select(sel).order("is_pinned", { ascending: false }).order("created_at", { ascending: false }).limit(100);
     if (tab === "home") q = q.eq("city_id", selectedCityId);
     else if (tab === "follows") q = follows.length ? q.in("city_id", follows) : null;
     if (!q) { setPosts([]); setSkel(false); return; }
@@ -335,87 +324,6 @@ function Feed({ profile, cities }) {
     const { data } = await supabase.from("comments").select("*, profiles!comments_user_id_fkey(username)").eq("post_id", postId).order("created_at", { ascending: true });
     setCList(data || []);
   }
-  async function toggleFollow(cityId) {
-    if (follows.includes(cityId)) {
-      await supabase.from("city_follows").delete().eq("user_id", profile.id).eq("city_id", cityId);
-    } else {
-      if (follows.length >= 2) { flashNotice("يمكنك متابعة مدينتين فقط كحد أقصى"); return; }
-      await supabase.from("city_follows").insert({ user_id: profile.id, city_id: cityId });
-    }
-    loadFollows();
-  }
-  function pickImage(f) {
-    setImageFile(f);
-    if (f) { const r = new FileReader(); r.onload = () => setImgPrev(r.result); r.readAsDataURL(f); }
-    else setImgPrev(null);
-  }
-  async function createPost() {
-    setBusy(true); setMessage("");
-    let imageUrl = null;
-    if (imageFile) {
-      const path = profile.id + "/" + Date.now() + "_" + imageFile.name.replace(/[^a-zA-Z0-9.]/g, "_");
-      const { error: ue } = await supabase.storage.from("post-images").upload(path, imageFile, { contentType: imageFile.type });
-      if (ue) { setMessage("فشل رفع الصورة: " + ue.message); setBusy(false); return; }
-      imageUrl = supabase.storage.from("post-images").getPublicUrl(path).data.publicUrl;
-    }
-    const { error } = await supabase.from("posts").insert({ user_id: profile.id, city_id: selectedCityId, category, title, body, image_url: imageUrl });
-    if (error) setMessage("خطأ نشر: " + error.message);
-    else {
-      setTitle(""); setBody(""); setImageFile(null); setImgPrev(null);
-      setSheet(null); flashNotice("تم النشر بنجاح ✅"); loadPosts();
-    }
-    setBusy(false);
-  }
-  const toggleUseful = useCallback(async function(postId) {
-    // Optimistic: show immediately
-    const wasLiked = votedIds.has(postId) || optimisticLiked.has(postId);
-    if (wasLiked) {
-      const n = new Set(optimisticLiked); n.delete(postId); setOptimisticLiked(n);
-      await supabase.from("useful_votes").delete().eq("post_id", postId).eq("user_id", profile.id);
-      const n2 = new Set(votedIds); n2.delete(postId); setVotedIds(n2);
-    } else {
-      const n = new Set(optimisticLiked); n.add(postId); setOptimisticLiked(n);
-      await supabase.from("useful_votes").insert({ post_id: postId, user_id: profile.id });
-      const n2 = new Set(votedIds); n2.add(postId); setVotedIds(n2);
-      const owner = posts.find((x) => x.id === postId)?.user_id || (sheet && sheet.post && sheet.post.id === postId ? sheet.post.user_id : null);
-      if (owner && owner !== profile.id) await supabase.from("notifications").insert({ user_id: owner, actor_id: profile.id, type: "like", post_id: postId });
-    }
-    loadPosts();
-  }, [votedIds, optimisticLiked, profile.id, posts]);
-  async function addComment(postId) {
-    const text = cText.trim();
-    if (!text) return;
-    await supabase.from("comments").insert({ post_id: postId, user_id: profile.id, body: text });
-    const owner = posts.find((x) => x.id === postId)?.user_id || (sheet && sheet.post ? sheet.post.user_id : null);
-    if (owner && owner !== profile.id) await supabase.from("notifications").insert({ user_id: owner, actor_id: profile.id, type: "comment", post_id: postId });
-    setCText("");
-    loadComments(postId);
-    loadPosts();
-  }
-  async function sendReport(postId) {
-    if (!rText.trim()) return;
-    await supabase.from("reports").insert({ post_id: postId, user_id: profile.id, reason: rText.trim() });
-    setRText(""); setSheet(null); flashNotice("تم إرسال البلاغ إلى الإدارة ✔");
-  }
-  async function sharePost(post) {
-    const text = "📱 لَمّة | " + categoryLabel(post.category) + "\n🏙 " + cityName(post.city_id) + "\n📌 " + post.title + "\n📝 " + post.body + "\n— @" + (post.profiles?.username || "") + "\n👍 " + usefulCount(post);
-    try { if (navigator.share) { await navigator.share({ text }); return; } } catch (e) {}
-    try { await navigator.clipboard.writeText(text); flashNotice("تم نسخ بطاقة المنشور ✔ الصقها في واتساب"); } catch (e) { setNotice(text); }
-  }
-  async function doSearch() {
-    if (!sQ.trim()) { setSRes([]); return; }
-    setSBusy(true);
-    const term = "%" + sQ.trim() + "%";
-    const { data } = await supabase.from("posts")
-      .select("*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)")
-      .or("title.ilike." + term + ",body.ilike." + term)
-      .order("created_at", { ascending: false }).limit(20);
-    setSRes(data || []);
-    setSBusy(false);
-  }
-  function ts(e) { if (window.scrollY <= 0) setStartY(e.touches[0].clientY); }
-  function tm(e) { if (startY != null && window.scrollY <= 0) { const dy = e.touches[0].clientY - startY; if (dy > 0) setPull(Math.min(dy, 90)); } }
-  function te() { if (pull > 60) { loadPosts(); flashNotice("تم التحديث ✔"); } setPull(0); setStartY(null); }
   async function loadUnread() {
     const { count } = await supabase.from("notifications").select("*", { count: "exact", head: true }).eq("user_id", profile.id).eq("read", false);
     setUnread(count || 0);
@@ -424,62 +332,41 @@ function Feed({ profile, cities }) {
     const { data } = await supabase.from("saves").select("post_id").eq("user_id", profile.id);
     setSavedIds(new Set((data || []).map((x) => x.post_id)));
   }
-  async function openNotif() {
-    setSheet({ type: "notif" });
-    setSheetLoading(true);
-    const { data } = await supabase.from("notifications").select("*, profiles!notifications_actor_id_fkey(username), posts(title)").eq("user_id", profile.id).order("created_at", { ascending: false }).limit(30);
-    setNList(data || []);
-    setSheetLoading(false);
-    await supabase.from("notifications").update({ read: true }).eq("user_id", profile.id).eq("read", false);
-    setUnread(0);
-  }
-  async function openSaves() {
-    setSheet({ type: "saves" });
-    setSheetLoading(true);
-    const ids = Array.from(savedIds);
-    if (!ids.length) { setSvList([]); setSheet({ type: "saves" }); return; }
-    const { data } = await supabase.from("posts").select("*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)").in("id", ids).order("created_at", { ascending: false });
-    setSvList(data || []);
-    setSheetLoading(false);
-  }
-  async function toggleSave(post) {
-    const wasSaved = savedIds.has(post.id) || optimisticSaved.has(post.id);
-    if (wasSaved) {
-      const n = new Set(optimisticSaved); n.delete(post.id); setOptimisticSaved(n);
-      await supabase.from("saves").delete().eq("user_id", profile.id).eq("post_id", post.id);
-      const n2 = new Set(savedIds); n2.delete(post.id); setSavedIds(n2);
-    } else {
-      const n = new Set(optimisticSaved); n.add(post.id); setOptimisticSaved(n);
-      await supabase.from("saves").insert({ user_id: profile.id, post_id: post.id });
-      const n2 = new Set(savedIds); n2.add(post.id); setSavedIds(n2);
-    }
-  }
   async function loadMsgs() {
     const { count } = await supabase.from("messages").select("*", { count: "exact", head: true }).eq("to_id", profile.id).eq("read", false);
     setUnreadMsgs(count || 0);
   }
+  async function openNotif() {
+    setSheet({ type: "notif" }); setSheetLoading(true);
+    const { data } = await supabase.from("notifications").select("*, profiles!notifications_actor_id_fkey(username), posts(title)").eq("user_id", profile.id).order("created_at", { ascending: false }).limit(30);
+    setNList(data || []); setSheetLoading(false);
+    await supabase.from("notifications").update({ read: true }).eq("user_id", profile.id).eq("read", false);
+    setUnread(0);
+  }
   async function openInbox() {
-    setSheet({ type: "inbox" });
-    setSheetLoading(true);
+    setSheet({ type: "inbox" }); setSheetLoading(true);
     const raw = await supabase.from("messages").select("*, profiles!messages_from_id_fkey(username)").eq("to_id", profile.id).order("created_at", { ascending: false }).limit(50);
     const out = await supabase.from("messages").select("*, profiles!messages_to_id_fkey(username)").eq("from_id", profile.id).order("created_at", { ascending: false }).limit(50);
     const all = [...(raw.data || []), ...(out.data || [])];
     const grouped = {};
-    all.forEach((m) => { const k = m.from_id === profile.id ? m.to_id : m.from_id; if (!grouped[k]) grouped[k] = { peer: k, peerName: m.from_id === profile.id ? m.profiles?.username : m.profiles?.username, last: m, unread: 0 }; if (m.to_id === profile.id && !m.read) grouped[k].unread++; if (new Date(m.created_at) > new Date(grouped[k].last.created_at)) grouped[k].last = m; });
-    setInbox(Object.values(grouped));
-    setSheetLoading(false);
+    all.forEach((m) => {
+      const k = m.from_id === profile.id ? m.to_id : m.from_id;
+      if (!grouped[k]) grouped[k] = { peer: k, peerName: m.profiles?.username, last: m, unread: 0 };
+      if (m.to_id === profile.id && !m.read) grouped[k].unread++;
+      if (new Date(m.created_at) > new Date(grouped[k].last.created_at)) grouped[k].last = m;
+    });
+    setInbox(Object.values(grouped)); setSheetLoading(false);
     await supabase.from("messages").update({ read: true }).eq("to_id", profile.id).eq("read", false);
     loadMsgs();
   }
   async function openChatWith(peerId, peerName) {
-    setSheet({ type: "chat", peerId, peerName, messages: [], text: "" });
-    setSheetLoading(true);
+    setSheet({ type: "chat", peerId, peerName, messages: [], text: "" }); setSheetLoading(true);
     const { data } = await supabase.from("messages").select("*").or("and(from_id.eq." + profile.id + ",to_id.eq." + peerId + "),and(from_id.eq." + peerId + ",to_id.eq." + profile.id + ")").order("created_at", { ascending: true });
-    setSheet({ type: "chat", peerId, peerName, messages: data || [], text: "" });
+    setSheet({ type: "chat", peerId, peerName, messages: data || [], text: "" }); setSheetLoading(false);
   }
-  async function sendMessage(peerId, body) {
-    if (!body.trim()) return;
-    await supabase.from("messages").insert({ from_id: profile.id, to_id: peerId, body: body.trim() });
+  async function sendMessage(peerId, txt) {
+    if (!txt.trim()) return;
+    await supabase.from("messages").insert({ from_id: profile.id, to_id: peerId, body: txt.trim() });
     const { data } = await supabase.from("messages").select("*").or("and(from_id.eq." + profile.id + ",to_id.eq." + peerId + "),and(from_id.eq." + peerId + ",to_id.eq." + profile.id + ")").order("created_at", { ascending: true });
     setSheet((prev) => ({ ...prev, messages: data || [], text: "" }));
   }
@@ -492,54 +379,152 @@ function Feed({ profile, cities }) {
     ]);
     setMyStats({ posts: p.count || 0, comments: c.count || 0, likes: l.count || 0, follows: f.count || 0 });
   }
-  async function togglePin(postId, current) {
-    const now = current ? null : new Date().toISOString();
-    await supabase.from("posts").update({ is_pinned: !current, pinned_at: now }).eq("id", postId);
+  async function toggleFollow(cityId) {
+    if (follows.includes(cityId)) await supabase.from("city_follows").delete().eq("user_id", profile.id).eq("city_id", cityId);
+    else {
+      if (follows.length >= 2) { flashNotice("يمكنك متابعة مدينتين فقط كحد أقصى"); return; }
+      await supabase.from("city_follows").insert({ user_id: profile.id, city_id: cityId });
+    }
+    loadFollows();
+  }
+  function pickImage(f) {
+    setImageFile(f);
+    if (f) { const r = new FileReader(); r.onload = () => setImgPrev(r.result); r.readAsDataURL(f); }
+    else setImgPrev(null);
+  }
+  function compressImage(file) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const max = 1280;
+        let w = img.width, h = img.height;
+        if (w > max || h > max) { const r = Math.min(max / w, max / h); w = Math.round(w * r); h = Math.round(h * r); }
+        const c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        c.getContext("2d").drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(url);
+        c.toBlob((b) => resolve(b || file), "image/jpeg", 0.8);
+      };
+      img.onerror = () => resolve(file);
+      img.src = url;
+    });
+  }
+  async function createPost() {
+    setBusy(true); setMessage("");
+    let imageUrl = null;
+    if (imageFile) {
+      const blob = await compressImage(imageFile);
+      const path = profile.id + "/" + Date.now() + ".jpg";
+      const { error: ue } = await supabase.storage.from("post-images").upload(path, blob, { contentType: "image/jpeg" });
+      if (ue) { setMessage("فشل رفع الصورة: " + ue.message); setBusy(false); return; }
+      imageUrl = supabase.storage.from("post-images").getPublicUrl(path).data.publicUrl;
+    }
+    const { error } = await supabase.from("posts").insert({ user_id: profile.id, city_id: selectedCityId, category, title, body, image_url: imageUrl });
+    if (error) setMessage("خطأ نشر: " + error.message);
+    else { setTitle(""); setBody(""); setImageFile(null); setImgPrev(null); closeSheet(); flashNotice("تم النشر بنجاح ✅"); loadPosts(); }
+    setBusy(false);
+  }
+  async function toggleUseful(postId) {
+    const was = votedIds.has(postId) || optimisticLiked.has(postId);
+    if (was) {
+      const o = new Set(optimisticLiked); o.delete(postId); setOptimisticLiked(o);
+      await supabase.from("useful_votes").delete().eq("post_id", postId).eq("user_id", profile.id);
+      const n = new Set(votedIds); n.delete(postId); setVotedIds(n);
+    } else {
+      const o = new Set(optimisticLiked); o.add(postId); setOptimisticLiked(o);
+      await supabase.from("useful_votes").insert({ post_id: postId, user_id: profile.id });
+      const n = new Set(votedIds); n.add(postId); setVotedIds(n);
+      const owner = posts.find((x) => x.id === postId)?.user_id || (sheet && sheet.post && sheet.post.id === postId ? sheet.post.user_id : null);
+      if (owner && owner !== profile.id) await supabase.from("notifications").insert({ user_id: owner, actor_id: profile.id, type: "like", post_id: postId });
+    }
     loadPosts();
   }
-  function closeSheet() {
-    setSheet(null);
-    setSheetLoading(false);
+  async function addComment(postId) {
+    const text = cText.trim();
+    if (!text) return;
+    await supabase.from("comments").insert({ post_id: postId, user_id: profile.id, body: text });
+    const owner = posts.find((x) => x.id === postId)?.user_id || (sheet && sheet.post ? sheet.post.user_id : null);
+    if (owner && owner !== profile.id) await supabase.from("notifications").insert({ user_id: owner, actor_id: profile.id, type: "comment", post_id: postId });
+    setCText("");
+    loadComments(postId); loadPosts();
   }
+  async function deleteComment(commentId) {
+    await supabase.from("comments").delete().eq("id", commentId);
+    if (sheet && sheet.type === "comments") loadComments(sheet.post.id);
+    flashNotice("تم حذف التعليق 🗑");
+  }
+  async function deletePost(postId) {
+    await supabase.from("posts").delete().eq("id", postId);
+    setDelId(null); flashNotice("تم حذف المنشور 🗑"); loadPosts();
+  }
+  async function togglePin(postId, current) {
+    await supabase.from("posts").update({ is_pinned: !current, pinned_at: current ? null : new Date().toISOString() }).eq("id", postId);
+    loadPosts();
+  }
+  async function toggleSave(post) {
+    const was = savedIds.has(post.id) || optimisticSaved.has(post.id);
+    if (was) {
+      const o = new Set(optimisticSaved); o.delete(post.id); setOptimisticSaved(o);
+      await supabase.from("saves").delete().eq("user_id", profile.id).eq("post_id", post.id);
+      const n = new Set(savedIds); n.delete(post.id); setSavedIds(n);
+    } else {
+      const o = new Set(optimisticSaved); o.add(post.id); setOptimisticSaved(o);
+      await supabase.from("saves").insert({ user_id: profile.id, post_id: post.id });
+      const n = new Set(savedIds); n.add(post.id); setSavedIds(n);
+    }
+  }
+  async function sendReport(postId) {
+    if (!rText.trim()) return;
+    await supabase.from("reports").insert({ post_id: postId, user_id: profile.id, reason: rText.trim() });
+    setRText(""); closeSheet(); flashNotice("تم إرسال البلاغ إلى الإدارة ✔");
+  }
+  async function sharePost(post) {
+    const text = "📱 لَمّة | " + categoryLabel(post.category) + "\n🏙 " + cityName(post.city_id) + "\n📌 " + post.title + "\n📝 " + post.body + "\n— @" + (post.profiles?.username || "") + "\n👍 " + usefulCount(post);
+    try { if (navigator.share) { await navigator.share({ text }); return; } } catch (e) {}
+    try { await navigator.clipboard.writeText(text); flashNotice("تم نسخ بطاقة المنشور ✔ الصقها في واتساب"); } catch (e) { setNotice(text); }
+  }
+  async function doSearch(q) {
+    if (!q || !q.trim()) { setSRes([]); return; }
+    setSBusy(true);
+    const term = "%" + q.trim() + "%";
+    const { data } = await supabase.from("posts").select("*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)").or("title.ilike." + term + ",body.ilike." + term).order("created_at", { ascending: false }).limit(20);
+    setSRes(data || []); setSBusy(false);
+  }
+  function ts(e) { if (window.scrollY <= 0) setStartY(e.touches[0].clientY); }
+  function tm(e) { if (startY != null && window.scrollY <= 0) { const dy = e.touches[0].clientY - startY; if (dy > 0) setPull(Math.min(dy, 90)); } }
+  function te() { if (pull > 60) { loadPosts(); flashNotice("تم التحديث ✔"); } setPull(0); setStartY(null); }
   async function logout() { await supabase.auth.signOut(); }
-  function cityName(id) { return cities.find((c) => c.id === Number(id))?.name || ""; }
-  function categoryLabel(id) { return categories.find((i) => i.id === id)?.label || id; }
-  function usefulCount(p) { return p.useful_votes?.[0]?.count || 0; }
-  function commentCount(p) { return p.comments?.[0]?.count || 0; }
 
   const cardProps = (p) => ({
     post: p, voted: votedIds.has(p.id) || optimisticLiked.has(p.id), useful: usefulCount(p), comments: commentCount(p),
     onLike: toggleUseful, onComments: () => setSheet({ type: "comments", post: p }),
     onShare: () => sharePost(p), onReport: () => setSheet({ type: "report", post: p }),
     saved: savedIds.has(p.id) || optimisticSaved.has(p.id), onSave: () => toggleSave(p),
-    onPin: () => togglePin(p.id, p.is_pinned), onMessage: p.user_id !== profile.id ? () => openChatWith(p.user_id, p.profiles?.username) : null,
+    onPin: () => togglePin(p.id, p.is_pinned),
+    onMessage: p.user_id !== profile.id ? () => openChatWith(p.user_id, p.profiles?.username) : null,
     canPin: profile.is_admin,
+    onDelete: p.user_id === profile.id ? () => { if (delId === p.id) deletePost(p.id); else { setDelId(p.id); flashNotice("اضغط مرة أخرى لتأكيد الحذف"); setTimeout(() => setDelId(null), 2500); } } : null,
     city: cityName, cat: categoryLabel
   });
 
+  const skelRow = <div className="skpost"><div className="sk head" /><div className="sk img" /></div>;
   return (
     <div className="app">
+      {!online && <div className="notice" style={{ background: "#fef2f2", color: "#991b1b", borderColor: "#fca5a5" }}>📴 لا يوجد اتصال بالإنترنت</div>}
       <header className="topbar2">
         <div className="logo">لَمّة</div>
         <div style={{ display: "flex", gap: 6 }}>
-          <button className="ibtn" onClick={openNotif} style={{ position: "relative" }}>
-            <Icon n="bell" />
-            {unread > 0 && <span className="nbadge">{unread}</span>}
-          </button>
           <button className="ibtn" onClick={() => setSheet({ type: "search" })}><Icon n="search" /></button>
-          <button className="ibtn" onClick={() => setDark(!dark)}><Icon n="moon" /></button>
-          <button className="ibtn" onClick={openInbox} style={{ position: "relative" }}>
-            <Icon n="mail" />
-            {unreadMsgs > 0 && <span className="nbadge">{unreadMsgs}</span>}
-          </button>
+          <button className="ibtn" onClick={() => { const d = document.body.classList.toggle("dark"); localStorage.setItem("lamma-dark", d ? "1" : "0"); }}><Icon n="moon" /></button>
+          <button className="ibtn" onClick={openInbox} style={{ position: "relative" }}><Icon n="mail" />{unreadMsgs > 0 && <span className="nbadge">{unreadMsgs}</span>}</button>
+          <button className="ibtn" onClick={openNotif} style={{ position: "relative" }}><Icon n="bell" />{unread > 0 && <span className="nbadge">{unread}</span>}</button>
           {profile.is_admin && <button className="ibtn" onClick={() => setTab("admin")}><Icon n="shield" /></button>}
-          <button className="ibtn" onClick={logout}><Icon n="out" /></button>
+          <button className="ibtn" onClick={() => { if (confirmLogout) logout(); else { setConfirmLogout(true); flashNotice("اضغط مرة أخرى لتأكيد الخروج"); setTimeout(() => setConfirmLogout(false), 2500); } }}><Icon n="out" /></button>
         </div>
       </header>
-
       {notice && <div className="notice">{notice}</div>}
       <UpdateNotice />
-
       {tab === "home" && (
         <div onTouchStart={ts} onTouchMove={tm} onTouchEnd={te}>
           <div className={"pull " + (pull > 10 ? "on" : "")}><Icon n="refresh" s={20} /></div>
@@ -554,27 +539,24 @@ function Feed({ profile, cities }) {
           <div className="cityline">
             <b>منشورات {cityName(selectedCityId)}</b>
             {selectedCityId !== profile.city_id && (
-              <button className="chip" onClick={() => toggleFollow(selectedCityId)}>
-                {follows.includes(selectedCityId) ? "✓ متابَعة" : "+ متابعة"}
-              </button>
+              <button className="chip" onClick={() => toggleFollow(selectedCityId)}>{follows.includes(selectedCityId) ? "✓ متابَعة" : "+ متابعة"}</button>
             )}
           </div>
-          {skel && [1, 2, 3].map((i) => (<div className="skpost" key={i}><div className="sk head" /><div className="sk img" /></div>))}
-          {posts.length === 0 && !skel && <div className="empty">لا منشورات بعد في {cityName(selectedCityId)}.<br />كن أول من ينشر!</div>}
-          {posts.map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
+          {skel && skelRow}{skel && skelRow}
+          {!skel && posts.length === 0 && <div className="empty">لا منشورات بعد في {cityName(selectedCityId)}.<br />كن أول من ينشر!</div>}
+          {!skel && posts.map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
         </div>
       )}
-
       {tab === "pulse" && <Pulse profile={profile} cities={cities} onOpen={(p) => setSheet({ type: "post", post: p })} />}
       {tab === "follows" && (
         <>
           {follows.length === 0 && <div className="empty">لم تتابع أي مدينة بعد.<br />من تبويب المدينة اضغط "+ متابعة".</div>}
-          {posts.map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
+          {skel && skelRow}
+          {!skel && posts.map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
         </>
       )}
       {tab === "admin" && profile.is_admin && <Admin />}
-      {tab === "me" && <Me profile={profile} cities={cities} onInvite={shareApp} onSaves={openSaves} onStats={() => { loadMyStats(); setSheet({ type: "mystats" }); }} onEditBio={() => setSheet({ type: "bio" })} />}
-
+      {tab === "me" && <Me profile={profile} cities={cities} onInvite={shareApp} onSaves={() => openSavesWrap()} onStats={() => { loadMyStats(); setSheet({ type: "mystats" }); }} onEditBio={() => setSheet({ type: "bio" })} />}
       <nav className="bottom">
         <button className={tab === "home" ? "on" : ""} onClick={() => setTab("home")}><Icon n="home" /></button>
         <button className={tab === "pulse" ? "on" : ""} onClick={() => setTab("pulse")}><Icon n="comp" /></button>
@@ -583,38 +565,23 @@ function Feed({ profile, cities }) {
         <button className={tab === "me" ? "on" : ""} onClick={() => setTab("me")}><Icon n="user" /></button>
       </nav>
 
-      {sheet && sheet.type === "search" && (
-        <Sheet title="بحث في كل المدن" onClose={closeSheet}>
-          <input placeholder="ابحث عن منشور..." value={sQ} onChange={(e) => { setSQ(e.target.value); if (debounceTimer.current) clearTimeout(debounceTimer.current); debounceTimer.current = setTimeout(() => doSearch(e.target.value), 400); }} />
-          <button className="btn1" onClick={doSearch}>{sBusy ? "جاري البحث..." : "بحث"}</button>
-          {sRes.map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
-          {sRes.length === 0 && sQ && !sBusy && <div className="empty">لا نتائج.</div>}
-        </Sheet>
-      )}
       {sheet && sheet.type === "notif" && (
         <Sheet title="الإشعارات" onClose={closeSheet}>
-          {sheetLoading && <div className="skpost"><div className="sk head" /><div className="sk head" /><div className="sk head" /></div>}
-          {nList.map((n) => (
+          {sheetLoading && skelRow}
+          {!sheetLoading && nList.map((n) => (
             <div className="comment" key={n.id}>
               <span className="ava sm">{avaLetter(n.profiles?.username)}</span>
               <div>{n.type === "comment" ? "💬 علّق" : "♥ أعجب"} <b>@{n.profiles?.username}</b> على: {n.posts?.title || "منشور"}<div className="muted">{timeAgo(n.created_at)}</div></div>
             </div>
           ))}
-          {nList.length === 0 && <div className="empty">لا إشعارات بعد.</div>}
-        </Sheet>
-      )}
-      {sheet && sheet.type === "saves" && (
-        <Sheet title="محفوظاتي" onClose={closeSheet}>
-          {sheetLoading && <div className="skpost"><div className="sk head" /><div className="sk head" /><div className="sk head" /></div>}
-          {svList.map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
-          {svList.length === 0 && <div className="empty">لا منشورات محفوظة.</div>}
+          {!sheetLoading && nList.length === 0 && <div className="empty">لا إشعارات بعد.</div>}
         </Sheet>
       )}
       {sheet && sheet.type === "inbox" && (
-        <Sheet title={"📨 الرسائل (" + unreadMsgs + " جديدة)"} onClose={closeSheet}>
-          {sheetLoading && <div className="skpost"><div className="sk head" /><div className="sk head" /><div className="sk head" /></div>}
-          {inbox.length === 0 && <div className="empty">لا رسائل بعد.</div>}
-          {inbox.map((c) => (
+        <Sheet title="📨 الرسائل" onClose={closeSheet}>
+          {sheetLoading && skelRow}
+          {!sheetLoading && inbox.length === 0 && <div className="empty">لا رسائل بعد.</div>}
+          {!sheetLoading && inbox.map((c) => (
             <div className="msg-item" key={c.peer} onClick={() => openChatWith(c.peer, c.peerName)}>
               <span className="ava sm">{avaLetter(c.peerName)}</span>
               <div className="msg-name">@{c.peerName}{c.unread > 0 && <span className="unread-dot" style={{ display: "inline-block", marginLeft: 6 }} />}</div>
@@ -625,9 +592,9 @@ function Feed({ profile, cities }) {
       )}
       {sheet && sheet.type === "chat" && (
         <Sheet title={"💬 @" + sheet.peerName} onClose={closeSheet}>
-          {sheetLoading && <div className="skpost"><div className="sk head" /><div className="sk head" /><div className="sk head" /></div>}
+          {sheetLoading && skelRow}
           <div style={{ maxHeight: 320, overflowY: "auto", padding: 8 }}>
-            {sheet.messages.map((m) => (
+            {(sheet.messages || []).map((m) => (
               <div key={m.id} style={{ textAlign: m.from_id === profile.id ? "left" : "right", margin: "6px 0" }}>
                 <div style={{ display: "inline-block", padding: "8px 12px", borderRadius: 14, background: m.from_id === profile.id ? "#0f766e" : "#efefef", color: m.from_id === profile.id ? "#fff" : "#111", maxWidth: "80%" }}>
                   {m.body}<div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>{timeAgo(m.created_at)}</div>
@@ -641,12 +608,19 @@ function Feed({ profile, cities }) {
           </div>
         </Sheet>
       )}
+      {sheet && sheet.type === "saves" && (
+        <Sheet title="محفوظاتي" onClose={closeSheet}>
+          {sheetLoading && skelRow}
+          {!sheetLoading && svList.length === 0 && <div className="empty">لا منشورات محفوظة.</div>}
+          {!sheetLoading && svList.map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
+        </Sheet>
+      )}
       {sheet && sheet.type === "mystats" && (
         <Sheet title="📊 إحصائياتي" onClose={closeSheet}>
           <div className="mehead">
             <span className="ava" style={{ width: 72, height: 72, fontSize: 28 }}>{avaLetter(profile.username)}</span>
             <b>@{profile.username}</b>
-            <div className="muted">عضو منذ {new Date(profile.joined_at || profile.created_at).toLocaleDateString("ar-LY")}</div>
+            <div className="muted">عضو منذ {new Date(profile.joined_at || Date.now()).toLocaleDateString("ar-LY")}</div>
           </div>
           <div className="stat-grid">
             <div className="stat-cell"><b>{myStats?.posts || 0}</b><span>منشوراتي</span></div>
@@ -658,9 +632,39 @@ function Feed({ profile, cities }) {
       )}
       {sheet && sheet.type === "bio" && (
         <Sheet title="✏️ تعديل السيرة الذاتية" onClose={closeSheet}>
-          <textarea placeholder="اكتب عن نفسك (200 حرف كحد أقصى)..." value={bioDraft} onChange={(e) => setBioDraft(e.target.value.slice(0, 200))} style={{ minHeight: 120 }} />
+          <textarea placeholder="اكتب عن نفسك (200 حرف)..." value={bioDraft} onChange={(e) => setBioDraft(e.target.value.slice(0, 200))} style={{ minHeight: 120 }} />
           <div className="muted">{bioDraft.length}/200</div>
-          <button className="btn1" onClick={async () => { await supabase.from("profiles").update({ bio: bioDraft }).eq("id", profile.id); flashNotice("تم الحفظ ✔"); setSheet(null); }}>حفظ</button>
+          <button className="btn1" onClick={async () => { await supabase.from("profiles").update({ bio: bioDraft }).eq("id", profile.id); flashNotice("تم الحفظ ✔"); closeSheet(); }}>حفظ</button>
+        </Sheet>
+      )}
+      {sheet && sheet.type === "search" && (
+        <Sheet title="بحث في كل المدن" onClose={closeSheet}>
+          <input placeholder="ابحث عن منشور..." value={sQ} onChange={(e) => { setSQ(e.target.value); if (debounceTimer.current) clearTimeout(debounceTimer.current); debounceTimer.current = setTimeout(() => doSearch(e.target.value), 400); }} />
+          <button className="btn1" onClick={() => doSearch(sQ)}>{sBusy ? "جاري البحث..." : "بحث"}</button>
+          {sRes.map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
+          {sRes.length === 0 && sQ && !sBusy && <div className="empty">لا نتائج.</div>}
+        </Sheet>
+      )}
+      {sheet && sheet.type === "report" && (
+        <Sheet title="إبلاغ عن المنشور" onClose={closeSheet}>
+          <input placeholder="سبب البلاغ" value={rText} onChange={(e) => setRText(e.target.value)} />
+          <button className="btn1" onClick={() => sendReport(sheet.post.id)}>إرسال البلاغ</button>
+          <button className="btn2" onClick={closeSheet}>إلغاء</button>
+        </Sheet>
+      )}
+      {sheet && sheet.type === "comments" && (
+        <Sheet title={"التعليقات (" + cList.length + ")"} onClose={closeSheet}>
+          {cList.map((c) => (
+            <div className="comment" key={c.id}>
+              <span className="ava sm">{avaLetter(c.profiles?.username)}</span>
+              <div style={{ flex: 1 }}><b>@{c.profiles?.username}</b> {c.body} {c.user_id === profile.id && <button className="ibtn" style={{ padding: 2 }} onClick={() => deleteComment(c.id)}><Icon n="trash" s={14} /></button>}</div>
+            </div>
+          ))}
+          {cList.length === 0 && <div className="empty">لا تعليقات بعد. كن أول من يعلّق!</div>}
+          <div className="crow">
+            <input placeholder="أضف تعليقًا..." value={cText} onChange={(e) => setCText(e.target.value)} />
+            <button onClick={() => addComment(sheet.post.id)}>إرسال</button>
+          </div>
         </Sheet>
       )}
       {sheet && sheet.type === "compose" && (
@@ -675,31 +679,6 @@ function Feed({ profile, cities }) {
           {message && <div className="error">{message}</div>}
         </Sheet>
       )}
-
-      {sheet && sheet.type === "comments" && (
-        <Sheet title={"التعليقات (" + cList.length + ")"} onClose={closeSheet}>
-          {cList.map((c) => (
-            <div className="comment" key={c.id}>
-              <span className="ava sm">{avaLetter(c.profiles?.username)}</span>
-              <div><b>@{c.profiles?.username}</b> {c.body}</div>
-            </div>
-          ))}
-          {cList.length === 0 && <div className="empty">لا تعليقات بعد. كن أول من يعلّق!</div>}
-          <div className="crow">
-            <input placeholder="أضف تعليقًا..." value={cText} onChange={(e) => setCText(e.target.value)} />
-            <button onClick={() => addComment(sheet.post.id)}>إرسال</button>
-          </div>
-        </Sheet>
-      )}
-
-      {sheet && sheet.type === "report" && (
-        <Sheet title="إبلاغ عن المنشور" onClose={closeSheet}>
-          <input placeholder="سبب البلاغ" value={rText} onChange={(e) => setRText(e.target.value)} />
-          <button className="btn1" onClick={() => sendReport(sheet.post.id)}>إرسال البلاغ</button>
-          <button className="btn2" onClick={() => setSheet(null)}>إلغاء</button>
-        </Sheet>
-      )}
-
       {sheet && sheet.type === "post" && (
         <Sheet title="منشور" onClose={closeSheet}>
           <PostCard {...cardProps(sheet.post)} />
@@ -709,26 +688,12 @@ function Feed({ profile, cities }) {
   );
 }
 
-async function shareApp() {
-  const text = "📱 انضم إلى تطبيق لَمّة - مجتمع مدينتك في ليبيا:\nhttps://github.com/abdo15542/lamma/releases";
-  try { if (navigator.share) { await navigator.share({ text }); return; } } catch (e) {}
-  try { await navigator.clipboard.writeText(text); } catch (e) {}
-}
-
-
 function Pulse({ profile, cities, onOpen }) {
   const [items, setItems] = useState([]);
   useEffect(() => { load(); }, []);
   async function load() {
-    const { data } = await supabase
-      .from("posts")
-      .select("*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count)")
-      .order("created_at", { ascending: false }).limit(100);
-    const list = (data || [])
-      .map((p) => ({ ...p, vc: p.useful_votes?.[0]?.count || 0 }))
-      .filter((p) => p.vc > 0 && p.city_id !== profile.city_id)
-      .sort((a, b) => b.vc - a.vc)
-      .slice(0, 30);
+    const { data } = await supabase.from("posts").select("*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count)").order("created_at", { ascending: false }).limit(100);
+    const list = (data || []).map((p) => ({ ...p, vc: p.useful_votes?.[0]?.count || 0 })).filter((p) => p.vc > 0 && p.city_id !== profile.city_id).sort((a, b) => b.vc - a.vc).slice(0, 30);
     setItems(list);
   }
   function cityName(id) { return cities.find((c) => c.id === Number(id))?.name || ""; }
@@ -750,8 +715,8 @@ function Pulse({ profile, cities, onOpen }) {
 
 function Admin() {
   const [reports, setReports] = useState([]);
-  const [confirmId, setConfirmId] = useState(null);
   const [stats, setStats] = useState(null);
+  const [confirmId, setConfirmId] = useState(null);
   useEffect(() => { load(); }, []);
   async function load() {
     const { data } = await supabase.from("reports").select("*, posts(title, body), profiles!reports_user_id_fkey(username)").order("created_at", { ascending: false });
@@ -797,13 +762,11 @@ function Me({ profile, cities, onInvite, onSaves, onStats, onEditBio }) {
         <span className="muted">{cityName(profile.city_id)}</span>
         {profile.bio && <div style={{ fontSize: 14, color: "#444", textAlign: "center", marginTop: 6 }}>{profile.bio}</div>}
       </div>
-      <div className="stats">
-        <span>ليبي 100%</span><span>بدون إعلانات</span><span>مجتمع حقيقي</span>
-      </div>
+      <div className="stats"><span>ليبي 100%</span><span>بدون إعلانات</span><span>مجتمع حقيقي</span></div>
       <div className="card2">
         <h3>عن لَمّة</h3>
         <p className="muted">شبكة اجتماعية ليبية بسيطة تجمع أهل المدينة الواحدة: خدمات، تنبيهات، سوق، سوالف، وتواصل بين المدن.</p>
-        <span className="badge2">الإصدار 2.0 — تصميم جديد</span>
+        <span className="badge2">الإصدار 2.0</span> <span className="badge2">بناء: {String(BUILD_SHA).slice(0, 7)}</span>
       </div>
       <div className="card2">
         <h3>شروط الاستخدام</h3>
@@ -817,9 +780,7 @@ function Me({ profile, cities, onInvite, onSaves, onStats, onEditBio }) {
       <div className="card2">
         <button className="btn2" onClick={onSaves}>🔖 محفوظاتي</button>
         <button className="btn2" onClick={onStats} style={{ marginTop: 8 }}>📊 إحصائياتي</button>
-      </div>
-      <div className="card2">
-        <button className="btn2" onClick={() => onEditBio && onEditBio()} style={{ marginTop: 0 }}>✏️ تعديل السيرة</button>
+        <button className="btn2" onClick={onEditBio} style={{ marginTop: 8 }}>✏️ تعديل السيرة</button>
       </div>
       <div className="card2">
         <button className="btn1" onClick={invite}>{copied ? "تم النسخ ✔" : "📤 دعوة جيرانك"}</button>
@@ -827,7 +788,6 @@ function Me({ profile, cities, onInvite, onSaves, onStats, onEditBio }) {
     </div>
   );
 }
-
 
 function UpdateNotice() {
   const [info, setInfo] = useState(null);
@@ -843,18 +803,39 @@ function UpdateNotice() {
       if (sha && mine !== "dev" && sha !== mine) {
         const asset = (d.assets || []).find((a) => a.name.endsWith(".apk"));
         setInfo({ url: asset ? asset.browser_download_url : d.html_url, sha, mine });
-      } else {
-        setInfo(null);
-      }
+      } else setInfo(null);
     } catch (e) { setInfo(null); }
   }
   if (!info) return null;
   return (
     <div className="notice">
       🔄 يتوفر تحديث جديد للَمّة! (نسختك: {info.mine} — المتاح: {info.sha})
-      <button className="btn1" onClick={() => { const a = document.createElement("a"); a.href = info.url; a.target = "_blank"; a.click(); }}>
-        ⬇️ حدّث الآن
-      </button>
+      <button className="btn1" onClick={() => { const a = document.createElement("a"); a.href = info.url; a.target = "_blank"; a.click(); }}>⬇️ حدّث الآن</button>
     </div>
   );
+}
+
+async function shareApp() {
+  const text = "📱 انضم إلى تطبيق لَمّة - مجتمع مدينتك في ليبيا:\nhttps://github.com/abdo15542/lamma/releases/tag/latest";
+  try { if (navigator.share) { await navigator.share({ text }); return; } } catch (e) {}
+  try { await navigator.clipboard.writeText(text); } catch (e) {}
+}
+
+class ErrorBoundary extends Component {
+  constructor(p) { super(p); this.state = { err: null }; }
+  static getDerivedStateFromError(e) { return { err: e }; }
+  render() {
+    if (this.state.err) return (
+      <div className="center"><div className="authcard">
+        <h2>😵 حدث خطأ غير متوقع</h2>
+        <p className="muted">{String(this.state.err && this.state.err.message ? this.state.err.message : this.state.err)}</p>
+        <button className="btn1" onClick={() => location.reload()}>إعادة التشغيل</button>
+      </div></div>
+    );
+    return this.props.children;
+  }
+}
+
+export default function App() {
+  return <ErrorBoundary><AppInner /></ErrorBoundary>;
 }
