@@ -51,6 +51,12 @@ function timeAgo(t) {
   return Math.floor(s / 86400) + " يوم";
 }
 function avaLetter(n) { const s = String(n || "").replace(/^ال/, ""); return s[0] || "؟"; }
+function activityBadge(n) {
+  if (n >= 100) return "🏆 أسطورة لَمّة";
+  if (n >= 30) return "🥇 عضو مخضرم";
+  if (n >= 10) return "🥈 عضو نشط";
+  return "🌱 عضو جديد";
+}
 function hashTags(text) {
   if (!text) return text;
   const parts = String(text).split(/(#\w+)/g);
@@ -196,7 +202,7 @@ function Sheet({ title, onClose, children }) {
   );
 }
 
-const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, onReport, city, cat, saved, onSave, onPin, onMessage, canPin, onDelete, onOpenProfile, onZoom }) {
+const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, onReport, city, cat, saved, onSave, onPin, onMessage, canPin, onDelete, onOpenProfile, onZoom, onEdit }) {
   const [boom, setBoom] = useState(false);
   function dbl() { if (!voted) onLike(post.id); setBoom(true); setTimeout(() => setBoom(false), 800); }
   return (
@@ -224,6 +230,7 @@ const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike,
         <button className="ibtn" onClick={onShare}><Icon n="send" /></button>
         <button className="ibtn" onClick={onSave}><Icon n="mark" f={saved} /></button>
         <span className="sp" />
+        {onEdit && <button className="ibtn" onClick={onEdit}><Icon n="edit" /></button>}
         {onDelete && <button className="ibtn" onClick={onDelete}><Icon n="trash" /></button>}
         {canPin && <button className="ibtn" onClick={onPin}><Icon n="pin" f={post.is_pinned} /></button>}
         {onMessage && <button className="ibtn" onClick={onMessage}><Icon n="mail" /></button>}
@@ -279,6 +286,11 @@ function Feed({ profile, cities }) {
   const [catFilter, setCatFilter] = useState(null);
   const [showTop, setShowTop] = useState(false);
   const [profView, setProfView] = useState(null);
+  const [cLikesMine, setCLikesMine] = useState([]);
+  const [cLikesCount, setCLikesCount] = useState({});
+  const [followInfo, setFollowInfo] = useState(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editBody, setEditBody] = useState("");
   let noticeTimer = null;
 
   useEffect(() => {
@@ -303,6 +315,20 @@ function Feed({ profile, cities }) {
     window.addEventListener("scroll", onScroll);
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
+  useEffect(() => {
+    const ch = supabase.channel("lamma-live")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "posts" }, (p) => {
+        if (tab === "home" && p.new.city_id === selectedCityId) { loadPosts(); flashNotice("📡 منشور جديد وصل الآن"); }
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (m) => {
+        if (m.new.to_id === profile.id) {
+          loadMsgs();
+          if (sheet && sheet.type === "chat" && sheet.peerId === m.new.from_id) setSheet((prev) => ({ ...prev, messages: [...(prev.messages || []), m.new] }));
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [tab, selectedCityId, sheet]);
   function flashNotice(msg) {
     setNotice(msg);
     if (noticeTimer) clearTimeout(noticeTimer);
@@ -336,6 +362,17 @@ function Feed({ profile, cities }) {
   async function loadComments(postId) {
     const { data } = await supabase.from("comments").select("*, profiles!comments_user_id_fkey(username)").eq("post_id", postId).order("created_at", { ascending: true });
     setCList(data || []);
+    const ids = (data || []).map((c) => c.id);
+    if (ids.length) {
+      const [all, mine] = await Promise.all([
+        supabase.from("comment_likes").select("comment_id").in("comment_id", ids),
+        supabase.from("comment_likes").select("comment_id").in("comment_id", ids).eq("user_id", profile.id)
+      ]);
+      const cnt = {};
+      (all.data || []).forEach((x) => { cnt[x.comment_id] = (cnt[x.comment_id] || 0) + 1; });
+      setCLikesCount(cnt);
+      setCLikesMine((mine.data || []).map((x) => x.comment_id));
+    } else { setCLikesCount({}); setCLikesMine([]); }
   }
   async function loadUnread() {
     const { count } = await supabase.from("notifications").select("*", { count: "exact", head: true }).eq("user_id", profile.id).eq("read", false);
@@ -515,6 +552,12 @@ function Feed({ profile, cities }) {
       supabase.from("posts").select("*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)").eq("user_id", userId).order("created_at", { ascending: false }).limit(30),
       supabase.from("comments").select("*", { count: "exact", head: true }).eq("user_id", userId)
     ]);
+    const [fc, fme, myf] = await Promise.all([
+      supabase.from("user_follows").select("*", { count: "exact", head: true }).eq("target_id", userId),
+      supabase.from("user_follows").select("*").eq("target_id", profile.id).eq("user_id", userId).maybeSingle(),
+      supabase.from("user_follows").select("*").eq("user_id", profile.id).eq("target_id", userId).maybeSingle()
+    ]);
+    setFollowInfo({ followers: fc.count || 0, followsMe: !!fme.data, iFollow: !!myf.data });
     setProfView({ pr: pr.data, ps: ps.data || [], cCount: cc.count || 0 });
     setSheetLoading(false);
   }
@@ -522,6 +565,33 @@ function Feed({ profile, cities }) {
     const { data } = await supabase.from("posts").select("*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)").eq("id", postId).maybeSingle();
     if (data) setSheet({ type: "post", post: data });
     else flashNotice("المنشور غير متاح (ربما حُذف)");
+  }
+  async function toggleFollowUser(userId) {
+    if (followInfo?.iFollow) {
+      await supabase.from("user_follows").delete().eq("user_id", profile.id).eq("target_id", userId);
+      setFollowInfo((f) => ({ ...f, iFollow: false, followers: Math.max(0, (f.followers || 1) - 1) }));
+    } else {
+      await supabase.from("user_follows").insert({ user_id: profile.id, target_id: userId });
+      setFollowInfo((f) => ({ ...f, iFollow: true, followers: (f.followers || 0) + 1 }));
+    }
+  }
+  async function toggleCommentLike(commentId) {
+    const mine = cLikesMine.includes(commentId);
+    if (mine) {
+      setCLikesMine((a) => a.filter((x) => x !== commentId));
+      setCLikesCount((m) => ({ ...m, [commentId]: Math.max(0, (m[commentId] || 1) - 1) }));
+      await supabase.from("comment_likes").delete().eq("user_id", profile.id).eq("comment_id", commentId);
+    } else {
+      setCLikesMine((a) => [...a, commentId]);
+      setCLikesCount((m) => ({ ...m, [commentId]: (m[commentId] || 0) + 1 }));
+      await supabase.from("comment_likes").insert({ user_id: profile.id, comment_id: commentId });
+    }
+  }
+  async function saveEditPost() {
+    if (!sheet || !sheet.post) return;
+    await supabase.from("posts").update({ title: editTitle, body: editBody }).eq("id", sheet.post.id);
+    flashNotice("تم تعديل المنشور ✏️");
+    closeSheet(); loadPosts();
   }
   async function logout() { await supabase.auth.signOut(); }
 
@@ -535,6 +605,7 @@ function Feed({ profile, cities }) {
     canPin: profile.is_admin,
     onDelete: (p.user_id === profile.id || profile.is_admin) ? () => { if (delId === p.id) deletePost(p.id); else { setDelId(p.id); flashNotice("اضغط مرة أخرى لتأكيد الحذف"); setTimeout(() => setDelId(null), 2500); } } : null,
     onOpenProfile: () => openProfile(p.user_id), onZoom: () => setSheet({ type: "zoom", src: p.image_url }),
+    onEdit: p.user_id === profile.id ? () => { setEditTitle(p.title); setEditBody(p.body); setSheet({ type: "edit", post: p }); } : null,
     city: cityName, cat: categoryLabel
   });
 
@@ -632,7 +703,7 @@ function Feed({ profile, cities }) {
             {(sheet.messages || []).map((m) => (
               <div key={m.id} style={{ textAlign: m.from_id === profile.id ? "left" : "right", margin: "6px 0" }}>
                 <div style={{ display: "inline-block", padding: "8px 12px", borderRadius: 14, background: m.from_id === profile.id ? "#0f766e" : "#efefef", color: m.from_id === profile.id ? "#fff" : "#111", maxWidth: "80%" }}>
-                  {m.body}<div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>{timeAgo(m.created_at)}</div>
+                  {m.body}<div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>{timeAgo(m.created_at)} {m.from_id === profile.id && (m.read ? "✓✓" : "✓")}</div>
                 </div>
               </div>
             ))}
@@ -692,7 +763,7 @@ function Feed({ profile, cities }) {
           {cList.map((c) => (
             <div className="comment" key={c.id}>
               <span className="ava sm">{avaLetter(c.profiles?.username)}</span>
-              <div style={{ flex: 1 }}><b className="clickname" onClick={() => openProfile(c.user_id)}>@{c.profiles?.username}</b> {c.body} {c.user_id === profile.id && <button className="ibtn" style={{ padding: 2 }} onClick={() => deleteComment(c.id)}><Icon n="trash" s={14} /></button>}</div>
+              <div style={{ flex: 1 }}><b className="clickname" onClick={() => openProfile(c.user_id)}>@{c.profiles?.username}</b> {c.body} {c.user_id === profile.id && <button className="ibtn" style={{ padding: 2 }} onClick={() => deleteComment(c.id)}><Icon n="trash" s={14} /></button>} <button className="ibtn" style={{ padding: 2 }} onClick={() => toggleCommentLike(c.id)}><Icon n="heart" s={14} f={cLikesMine.includes(c.id)} /> {cLikesCount[c.id] || 0}</button></div>
             </div>
           ))}
           {cList.length === 0 && <div className="empty">لا تعليقات بعد. كن أول من يعلّق!</div>}
@@ -718,6 +789,13 @@ function Feed({ profile, cities }) {
                 <span className="muted">{cityName(profView.pr.city_id)} • عضو منذ {new Date(profView.pr.joined_at || Date.now()).toLocaleDateString("ar-LY")}</span>
                 {profView.pr.bio && <div style={{ fontSize: 14, color: "#444", textAlign: "center" }}>{profView.pr.bio}</div>}
               </div>
+              <div className="cityline" style={{ padding: "4px 0" }}>
+                <span className="muted">{followInfo?.followers || 0} متابع {followInfo?.followsMe && <span className="badge2">يتابعك</span>}</span>
+                {profView.pr.id !== profile.id && (
+                  <button className="chip" onClick={() => toggleFollowUser(profView.pr.id)}>{followInfo?.iFollow ? "✓ تتابعه" : "+ متابعة"}</button>
+                )}
+              </div>
+              <div className="muted" style={{ textAlign: "center" }}>{activityBadge(profView.ps.length)}</div>
               <div className="stat-grid">
                 <div className="stat-cell"><b>{profView.ps.length}</b><span>منشور</span></div>
                 <div className="stat-cell"><b>{profView.cCount}</b><span>تعليق</span></div>
@@ -729,6 +807,13 @@ function Feed({ profile, cities }) {
               {profView.ps.length === 0 && <div className="empty">لا منشورات بعد.</div>}
             </>
           )}
+        </Sheet>
+      )}
+      {sheet && sheet.type === "edit" && (
+        <Sheet title="✏️ تعديل المنشور" onClose={closeSheet}>
+          <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} maxLength={120} />
+          <textarea value={editBody} onChange={(e) => setEditBody(e.target.value)} maxLength={1000} style={{ marginTop: 8, minHeight: 120 }} />
+          <button className="btn1" onClick={saveEditPost}>حفظ التعديلات</button>
         </Sheet>
       )}
       {sheet && sheet.type === "compose" && (
