@@ -184,3 +184,9 @@ body.dark .sk {
 
 /* Reduce layout shift */
 .post { contain: layout style; }
+
+/* Render only visible cards = faster scrolling */
+.post, .card2 { content-visibility: auto; contain-intrinsic-size: 320px; }
+/* Instant sheet open feel */
+.sheet { animation-duration: 0.22s; }
+.overlay { animation-duration: 0.15s; }

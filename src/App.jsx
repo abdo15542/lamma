@@ -268,6 +268,7 @@ function Feed({ profile, cities }) {
   const [optimisticLiked, setOptimisticLiked] = useState(new Set());
   const [follows, setFollows] = useState([]);
   const [sheet, setSheet] = useState(null);
+  const [sheetLoading, setSheetLoading] = useState(false);
   const [notice, setNotice] = useState("");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -305,6 +306,13 @@ function Feed({ profile, cities }) {
   useEffect(() => { if (tab === "home" || tab === "follows") loadPosts(); }, [selectedCityId, tab, follows]);
   useEffect(() => { if (sheet && sheet.type === "comments") loadComments(sheet.post.id); }, [sheet]);
 
+  let noticeTimer = null;
+  function flashNotice(msg) {
+    setNotice(msg);
+    if (noticeTimer) clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(() => setNotice(""), 2000);
+  }
+
   async function loadFollows() {
     const { data } = await supabase.from("city_follows").select("city_id").eq("user_id", profile.id);
     setFollows((data || []).map((x) => x.city_id));
@@ -331,7 +339,7 @@ function Feed({ profile, cities }) {
     if (follows.includes(cityId)) {
       await supabase.from("city_follows").delete().eq("user_id", profile.id).eq("city_id", cityId);
     } else {
-      if (follows.length >= 2) { setNotice("يمكنك متابعة مدينتين فقط كحد أقصى"); return; }
+      if (follows.length >= 2) { flashNotice("يمكنك متابعة مدينتين فقط كحد أقصى"); return; }
       await supabase.from("city_follows").insert({ user_id: profile.id, city_id: cityId });
     }
     loadFollows();
@@ -354,7 +362,7 @@ function Feed({ profile, cities }) {
     if (error) setMessage("خطأ نشر: " + error.message);
     else {
       setTitle(""); setBody(""); setImageFile(null); setImgPrev(null);
-      setSheet(null); setNotice("تم النشر بنجاح ✅"); loadPosts();
+      setSheet(null); flashNotice("تم النشر بنجاح ✅"); loadPosts();
     }
     setBusy(false);
   }
@@ -387,12 +395,12 @@ function Feed({ profile, cities }) {
   async function sendReport(postId) {
     if (!rText.trim()) return;
     await supabase.from("reports").insert({ post_id: postId, user_id: profile.id, reason: rText.trim() });
-    setRText(""); setSheet(null); setNotice("تم إرسال البلاغ إلى الإدارة ✔");
+    setRText(""); setSheet(null); flashNotice("تم إرسال البلاغ إلى الإدارة ✔");
   }
   async function sharePost(post) {
     const text = "📱 لَمّة | " + categoryLabel(post.category) + "\n🏙 " + cityName(post.city_id) + "\n📌 " + post.title + "\n📝 " + post.body + "\n— @" + (post.profiles?.username || "") + "\n👍 " + usefulCount(post);
     try { if (navigator.share) { await navigator.share({ text }); return; } } catch (e) {}
-    try { await navigator.clipboard.writeText(text); setNotice("تم نسخ بطاقة المنشور ✔ الصقها في واتساب"); } catch (e) { setNotice(text); }
+    try { await navigator.clipboard.writeText(text); flashNotice("تم نسخ بطاقة المنشور ✔ الصقها في واتساب"); } catch (e) { setNotice(text); }
   }
   async function doSearch() {
     if (!sQ.trim()) { setSRes([]); return; }
@@ -407,7 +415,7 @@ function Feed({ profile, cities }) {
   }
   function ts(e) { if (window.scrollY <= 0) setStartY(e.touches[0].clientY); }
   function tm(e) { if (startY != null && window.scrollY <= 0) { const dy = e.touches[0].clientY - startY; if (dy > 0) setPull(Math.min(dy, 90)); } }
-  function te() { if (pull > 60) { loadPosts(); setNotice("تم التحديث ✔"); } setPull(0); setStartY(null); }
+  function te() { if (pull > 60) { loadPosts(); flashNotice("تم التحديث ✔"); } setPull(0); setStartY(null); }
   async function loadUnread() {
     const { count } = await supabase.from("notifications").select("*", { count: "exact", head: true }).eq("user_id", profile.id).eq("read", false);
     setUnread(count || 0);
@@ -417,18 +425,22 @@ function Feed({ profile, cities }) {
     setSavedIds(new Set((data || []).map((x) => x.post_id)));
   }
   async function openNotif() {
+    setSheet({ type: "notif" });
+    setSheetLoading(true);
     const { data } = await supabase.from("notifications").select("*, profiles!notifications_actor_id_fkey(username), posts(title)").eq("user_id", profile.id).order("created_at", { ascending: false }).limit(30);
     setNList(data || []);
-    setSheet({ type: "notif" });
+    setSheetLoading(false);
     await supabase.from("notifications").update({ read: true }).eq("user_id", profile.id).eq("read", false);
     setUnread(0);
   }
   async function openSaves() {
+    setSheet({ type: "saves" });
+    setSheetLoading(true);
     const ids = Array.from(savedIds);
     if (!ids.length) { setSvList([]); setSheet({ type: "saves" }); return; }
     const { data } = await supabase.from("posts").select("*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)").in("id", ids).order("created_at", { ascending: false });
     setSvList(data || []);
-    setSheet({ type: "saves" });
+    setSheetLoading(false);
   }
   async function toggleSave(post) {
     const wasSaved = savedIds.has(post.id) || optimisticSaved.has(post.id);
@@ -447,17 +459,21 @@ function Feed({ profile, cities }) {
     setUnreadMsgs(count || 0);
   }
   async function openInbox() {
+    setSheet({ type: "inbox" });
+    setSheetLoading(true);
     const raw = await supabase.from("messages").select("*, profiles!messages_from_id_fkey(username)").eq("to_id", profile.id).order("created_at", { ascending: false }).limit(50);
     const out = await supabase.from("messages").select("*, profiles!messages_to_id_fkey(username)").eq("from_id", profile.id).order("created_at", { ascending: false }).limit(50);
     const all = [...(raw.data || []), ...(out.data || [])];
     const grouped = {};
     all.forEach((m) => { const k = m.from_id === profile.id ? m.to_id : m.from_id; if (!grouped[k]) grouped[k] = { peer: k, peerName: m.from_id === profile.id ? m.profiles?.username : m.profiles?.username, last: m, unread: 0 }; if (m.to_id === profile.id && !m.read) grouped[k].unread++; if (new Date(m.created_at) > new Date(grouped[k].last.created_at)) grouped[k].last = m; });
     setInbox(Object.values(grouped));
-    setSheet({ type: "inbox" });
+    setSheetLoading(false);
     await supabase.from("messages").update({ read: true }).eq("to_id", profile.id).eq("read", false);
     loadMsgs();
   }
   async function openChatWith(peerId, peerName) {
+    setSheet({ type: "chat", peerId, peerName, messages: [], text: "" });
+    setSheetLoading(true);
     const { data } = await supabase.from("messages").select("*").or("and(from_id.eq." + profile.id + ",to_id.eq." + peerId + "),and(from_id.eq." + peerId + ",to_id.eq." + profile.id + ")").order("created_at", { ascending: true });
     setSheet({ type: "chat", peerId, peerName, messages: data || [], text: "" });
   }
@@ -480,6 +496,10 @@ function Feed({ profile, cities }) {
     const now = current ? null : new Date().toISOString();
     await supabase.from("posts").update({ is_pinned: !current, pinned_at: now }).eq("id", postId);
     loadPosts();
+  }
+  function closeSheet() {
+    setSheet(null);
+    setSheetLoading(false);
   }
   async function logout() { await supabase.auth.signOut(); }
   function cityName(id) { return cities.find((c) => c.id === Number(id))?.name || ""; }
@@ -564,7 +584,7 @@ function Feed({ profile, cities }) {
       </nav>
 
       {sheet && sheet.type === "search" && (
-        <Sheet title="بحث في كل المدن" onClose={() => setSheet(null)}>
+        <Sheet title="بحث في كل المدن" onClose={closeSheet}>
           <input placeholder="ابحث عن منشور..." value={sQ} onChange={(e) => { setSQ(e.target.value); if (debounceTimer.current) clearTimeout(debounceTimer.current); debounceTimer.current = setTimeout(() => doSearch(e.target.value), 400); }} />
           <button className="btn1" onClick={doSearch}>{sBusy ? "جاري البحث..." : "بحث"}</button>
           {sRes.map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
@@ -572,7 +592,8 @@ function Feed({ profile, cities }) {
         </Sheet>
       )}
       {sheet && sheet.type === "notif" && (
-        <Sheet title="الإشعارات" onClose={() => setSheet(null)}>
+        <Sheet title="الإشعارات" onClose={closeSheet}>
+          {sheetLoading && <div className="skpost"><div className="sk head" /><div className="sk head" /><div className="sk head" /></div>}
           {nList.map((n) => (
             <div className="comment" key={n.id}>
               <span className="ava sm">{avaLetter(n.profiles?.username)}</span>
@@ -583,13 +604,15 @@ function Feed({ profile, cities }) {
         </Sheet>
       )}
       {sheet && sheet.type === "saves" && (
-        <Sheet title="محفوظاتي" onClose={() => setSheet(null)}>
+        <Sheet title="محفوظاتي" onClose={closeSheet}>
+          {sheetLoading && <div className="skpost"><div className="sk head" /><div className="sk head" /><div className="sk head" /></div>}
           {svList.map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
           {svList.length === 0 && <div className="empty">لا منشورات محفوظة.</div>}
         </Sheet>
       )}
       {sheet && sheet.type === "inbox" && (
-        <Sheet title={"📨 الرسائل (" + unreadMsgs + " جديدة)"} onClose={() => setSheet(null)}>
+        <Sheet title={"📨 الرسائل (" + unreadMsgs + " جديدة)"} onClose={closeSheet}>
+          {sheetLoading && <div className="skpost"><div className="sk head" /><div className="sk head" /><div className="sk head" /></div>}
           {inbox.length === 0 && <div className="empty">لا رسائل بعد.</div>}
           {inbox.map((c) => (
             <div className="msg-item" key={c.peer} onClick={() => openChatWith(c.peer, c.peerName)}>
@@ -601,7 +624,8 @@ function Feed({ profile, cities }) {
         </Sheet>
       )}
       {sheet && sheet.type === "chat" && (
-        <Sheet title={"💬 @" + sheet.peerName} onClose={() => setSheet(null)}>
+        <Sheet title={"💬 @" + sheet.peerName} onClose={closeSheet}>
+          {sheetLoading && <div className="skpost"><div className="sk head" /><div className="sk head" /><div className="sk head" /></div>}
           <div style={{ maxHeight: 320, overflowY: "auto", padding: 8 }}>
             {sheet.messages.map((m) => (
               <div key={m.id} style={{ textAlign: m.from_id === profile.id ? "left" : "right", margin: "6px 0" }}>
@@ -618,7 +642,7 @@ function Feed({ profile, cities }) {
         </Sheet>
       )}
       {sheet && sheet.type === "mystats" && (
-        <Sheet title="📊 إحصائياتي" onClose={() => setSheet(null)}>
+        <Sheet title="📊 إحصائياتي" onClose={closeSheet}>
           <div className="mehead">
             <span className="ava" style={{ width: 72, height: 72, fontSize: 28 }}>{avaLetter(profile.username)}</span>
             <b>@{profile.username}</b>
@@ -633,14 +657,14 @@ function Feed({ profile, cities }) {
         </Sheet>
       )}
       {sheet && sheet.type === "bio" && (
-        <Sheet title="✏️ تعديل السيرة الذاتية" onClose={() => setSheet(null)}>
+        <Sheet title="✏️ تعديل السيرة الذاتية" onClose={closeSheet}>
           <textarea placeholder="اكتب عن نفسك (200 حرف كحد أقصى)..." value={bioDraft} onChange={(e) => setBioDraft(e.target.value.slice(0, 200))} style={{ minHeight: 120 }} />
           <div className="muted">{bioDraft.length}/200</div>
-          <button className="btn1" onClick={async () => { await supabase.from("profiles").update({ bio: bioDraft }).eq("id", profile.id); setNotice("تم الحفظ ✔"); setSheet(null); }}>حفظ</button>
+          <button className="btn1" onClick={async () => { await supabase.from("profiles").update({ bio: bioDraft }).eq("id", profile.id); flashNotice("تم الحفظ ✔"); setSheet(null); }}>حفظ</button>
         </Sheet>
       )}
       {sheet && sheet.type === "compose" && (
-        <Sheet title="منشور جديد" onClose={() => setSheet(null)}>
+        <Sheet title="منشور جديد" onClose={closeSheet}>
           <div className="chips">{categories.map((c) => (<button key={c.id} className={category === c.id ? "on" : ""} onClick={() => setCategory(c.id)}>{c.label}</button>))}</div>
           <input placeholder="العنوان" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} />
           <textarea placeholder="اكتب التفاصيل..." value={body} onChange={(e) => setBody(e.target.value)} maxLength={1000} style={{ marginTop: 8 }} />
@@ -653,7 +677,7 @@ function Feed({ profile, cities }) {
       )}
 
       {sheet && sheet.type === "comments" && (
-        <Sheet title={"التعليقات (" + cList.length + ")"} onClose={() => setSheet(null)}>
+        <Sheet title={"التعليقات (" + cList.length + ")"} onClose={closeSheet}>
           {cList.map((c) => (
             <div className="comment" key={c.id}>
               <span className="ava sm">{avaLetter(c.profiles?.username)}</span>
@@ -669,7 +693,7 @@ function Feed({ profile, cities }) {
       )}
 
       {sheet && sheet.type === "report" && (
-        <Sheet title="إبلاغ عن المنشور" onClose={() => setSheet(null)}>
+        <Sheet title="إبلاغ عن المنشور" onClose={closeSheet}>
           <input placeholder="سبب البلاغ" value={rText} onChange={(e) => setRText(e.target.value)} />
           <button className="btn1" onClick={() => sendReport(sheet.post.id)}>إرسال البلاغ</button>
           <button className="btn2" onClick={() => setSheet(null)}>إلغاء</button>
@@ -677,7 +701,7 @@ function Feed({ profile, cities }) {
       )}
 
       {sheet && sheet.type === "post" && (
-        <Sheet title="منشور" onClose={() => setSheet(null)}>
+        <Sheet title="منشور" onClose={closeSheet}>
           <PostCard {...cardProps(sheet.post)} />
         </Sheet>
       )}
