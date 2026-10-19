@@ -211,11 +211,12 @@ const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike,
         <button className="pwho-btn" onClick={onOpenProfile}>
           <span className="ava sm">{avaLetter(post.profiles?.username)}</span>
           <div className="pwho">
-            <b>{post.is_pinned && <span className="pinned-label">📌 مثبّت</span>}@{post.profiles?.username}</b>
+            <b>{post.is_pinned && <span className="pinned-label">📌 مثبّت</span>}@{post.profiles?.username}{post.profiles?.is_admin && <span style={{ color: "#0f766e" }}> ✓</span>}</b>
             <span>{city(post.city_id)} • {timeAgo(post.created_at)}</span>
           </div>
         </button>
         <span className="badge2">{cat(post.category)}</span>
+        {post.price && <span className="badge2">💰 {post.price}</span>}
       </div>
       {post.image_url && (
         <div onDoubleClick={dbl} style={{ position: "relative" }}>
@@ -312,6 +313,12 @@ function Feed({ profile, cities }) {
   const [addPoll, setAddPoll] = useState(false);
   const [pollOpts, setPollOpts] = useState(["", "", "", ""]);
   const [peopleRes, setPeopleRes] = useState([]);
+  const [storyGroups, setStoryGroups] = useState([]);
+  const [storyView, setStoryView] = useState(null);
+  const [storySeen, setStorySeen] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem("lamma-seen") || "[]")); } catch (e) { return new Set(); } });
+  const [price, setPrice] = useState("");
+  const [storyBody, setStoryBody] = useState("");
+  const [tour, setTour] = useState(localStorage.getItem("lamma-tour") !== "1");
   const [editBody, setEditBody] = useState("");
   let noticeTimer = null;
 
@@ -351,6 +358,13 @@ function Feed({ profile, cities }) {
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [tab, selectedCityId, sheet]);
+  useEffect(() => {
+    if (!storyView) return;
+    const t = setTimeout(() => {
+      setStoryView((v) => (v && v.i < v.all.length - 1 ? { ...v, i: v.i + 1 } : null));
+    }, 5000);
+    return () => clearTimeout(t);
+  }, [storyView]);
   function flashNotice(msg) {
     setNotice(msg);
     if (noticeTimer) clearTimeout(noticeTimer);
@@ -368,7 +382,7 @@ function Feed({ profile, cities }) {
   }
   async function loadPosts() {
     setSkel(true);
-    const sel = "*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count), poll_options(id, label, position, poll_votes(count))";
+    const sel = "*, profiles!posts_user_id_fkey(username, is_admin), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count), poll_options(id, label, position, poll_votes(count))";
     let q = supabase.from("posts").select(sel).order("is_pinned", { ascending: false }).order("created_at", { ascending: false }).limit(100);
     if (tab === "home") q = q.eq("city_id", selectedCityId);
     if (catFilter) q = q.eq("category", catFilter);
@@ -497,14 +511,14 @@ function Feed({ profile, cities }) {
       if (ue) { setMessage("فشل رفع الصورة: " + ue.message); setBusy(false); return; }
       imageUrl = supabase.storage.from("post-images").getPublicUrl(path).data.publicUrl;
     }
-    const { data: newPost, error } = await supabase.from("posts").insert({ user_id: profile.id, city_id: selectedCityId, category, title, body, image_url: imageUrl }).select();
+    const { data: newPost, error } = await supabase.from("posts").insert({ user_id: profile.id, city_id: selectedCityId, category, title, body, image_url: imageUrl, price: price || null }).select();
     if (error) setMessage("خطأ نشر: " + error.message);
     else {
       if (newPost && addPoll) {
         const opts = pollOpts.map((t, i) => ({ t: t.trim(), i })).filter((x) => x.t);
         if (opts.length >= 2) await supabase.from("poll_options").insert(opts.map((x) => ({ post_id: newPost.id, label: x.t, position: x.i })));
       }
-      setTitle(""); setBody(""); setImageFile(null); setImgPrev(null); setAddPoll(false); setPollOpts(["", "", "", ""]); closeSheet(); flashNotice("تم النشر بنجاح ✅"); loadPosts();
+      setTitle(""); setBody(""); setImageFile(null); setImgPrev(null); setAddPoll(false); setPrice(""); setPollOpts(["", "", "", ""]); closeSheet(); flashNotice("تم النشر بنجاح ✅"); loadPosts();
     }
     setBusy(false);
   }
@@ -516,6 +530,7 @@ function Feed({ profile, cities }) {
       const n = new Set(votedIds); n.delete(postId); setVotedIds(n);
     } else {
       const o = new Set(optimisticLiked); o.add(postId); setOptimisticLiked(o);
+      if (navigator.vibrate) navigator.vibrate(12);
       await supabase.from("useful_votes").insert({ post_id: postId, user_id: profile.id });
       const n = new Set(votedIds); n.add(postId); setVotedIds(n);
       const owner = posts.find((x) => x.id === postId)?.user_id || (sheet && sheet.post && sheet.post.id === postId ? sheet.post.user_id : null);
@@ -649,6 +664,38 @@ function Feed({ profile, cities }) {
     const n = new Set(myVotes); n.add(optionId); setMyVotes(n);
     setPosts((old) => old.map((p) => p.id === postId ? { ...p, poll_options: (p.poll_options || []).map((o) => o.id === optionId ? { ...o, poll_votes: [{ count: (o.poll_votes?.[0]?.count || 0) + 1 }] } : o) } : p));
   }
+  async function loadStories() {
+    const since = new Date(Date.now() - 86400000).toISOString();
+    const [{ data: st }, { data: uf }] = await Promise.all([
+      supabase.from("stories").select("*, profiles!stories_user_id_fkey(username, city_id)").gte("created_at", since).order("created_at", { ascending: false }).limit(60),
+      supabase.from("user_follows").select("target_id").eq("user_id", profile.id)
+    ]);
+    const followUsers = new Set((uf || []).map((x) => x.target_id));
+    const okCities = new Set([profile.city_id, ...follows]);
+    const list = (st || []).filter((x) => x.user_id === profile.id || followUsers.has(x.user_id) || okCities.has(x.profiles?.city_id));
+    const g = {};
+    list.forEach((x) => { if (!g[x.user_id]) g[x.user_id] = { user: x.user_id, name: x.profiles?.username, items: [] }; g[x.user_id].items.push(x); });
+    setStoryGroups(Object.values(g));
+  }
+  async function addStory(file, bodyText) {
+    const blob = await compressImage(file);
+    const path = profile.id + "/story-" + Date.now() + ".jpg";
+    const { error: ue } = await supabase.storage.from("post-images").upload(path, blob, { contentType: "image/jpeg" });
+    if (ue) { flashNotice("فشل رفع القصة: " + ue.message); return; }
+    const url = supabase.storage.from("post-images").getPublicUrl(path).data.publicUrl;
+    await supabase.from("stories").insert({ user_id: profile.id, image_url: url, body: bodyText || null });
+    flashNotice("تم نشر قصتك 📸");
+    closeSheet(); loadStories();
+  }
+  function openStory(group) {
+    const all = [];
+    storyGroups.forEach((gg) => gg.items.forEach((it) => all.push(it)));
+    all.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    const idx = all.findIndex((x) => x.id === group.items[0].id);
+    setStoryView({ all, i: idx >= 0 ? idx : 0 });
+    const seen = new Set(storySeen); group.items.forEach((it) => seen.add(it.id));
+    setStorySeen(seen); localStorage.setItem("lamma-seen", JSON.stringify([...seen]));
+  }
   async function logout() { await supabase.auth.signOut(); }
 
   const cardProps = (p) => ({
@@ -686,6 +733,20 @@ function Feed({ profile, cities }) {
         <div onTouchStart={ts} onTouchMove={tm} onTouchEnd={te}>
           <div className={"pull " + (pull > 10 ? "on" : "")}><Icon n="refresh" s={20} /></div>
           <div className="stories">
+            <button className="story" onClick={() => setSheet({ type: "storynew" })}>
+              <span className="ring"><span className="ava" style={{ background: "#fff", color: "#0f766e", border: "2px dashed #0f766e" }}>+</span></span>
+              <span className="sname">قصتك</span>
+            </button>
+            {storyGroups.map((g) => (
+              <button key={g.user} className="story" onClick={() => openStory(g)}>
+                <span className="ring" style={{ border: g.items.some((it) => !storySeen.has(it.id)) ? "2px solid #f59e0b" : undefined }}>
+                  <span className="ava">{avaLetter(g.name)}</span>
+                </span>
+                <span className="sname">{g.name}</span>
+              </button>
+            ))}
+          </div>
+          <div className="stories">
             {cities.map((c) => (
               <button key={c.id} className={"story " + (c.id === selectedCityId ? "on" : "")} onClick={() => setSelectedCityId(c.id)}>
                 <span className="ring"><span className="ava">{avaLetter(c.name)}</span></span>
@@ -718,6 +779,42 @@ function Feed({ profile, cities }) {
       )}
       {tab === "admin" && profile.is_admin && <Admin />}
       {tab === "me" && <Me profile={profile} cities={cities} onInvite={shareApp} onSaves={() => openSavesWrap()} onStats={() => { loadMyStats(); setSheet({ type: "mystats" }); }} onEditBio={() => setSheet({ type: "bio" })} />}
+      {storyView && storyView.all[storyView.i] && (
+        <div className="overlay" style={{ alignItems: "stretch" }} onClick={() => setStoryView((v) => (v && v.i < v.all.length - 1 ? { ...v, i: v.i + 1 } : null))}>
+          <div style={{ position: "relative", width: "100%", height: "100%", background: "#000" }}>
+            <div style={{ position: "absolute", top: 8, left: 8, right: 8, display: "flex", gap: 3, zIndex: 3 }}>
+              {storyView.all.map((x, i) => (<span key={x.id} style={{ flex: 1, height: 3, borderRadius: 9, background: i <= storyView.i ? "#fff" : "rgba(255,255,255,.35)" }} />))}
+            </div>
+            <img src={storyView.all[storyView.i].image_url} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+            <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: 14, background: "linear-gradient(transparent, rgba(0,0,0,.7))", color: "#fff", zIndex: 3 }}>
+              <b>@{storyView.all[storyView.i].profiles?.username}</b> · {timeAgo(storyView.all[storyView.i].created_at)}
+              {storyView.all[storyView.i].body && <div>{storyView.all[storyView.i].body}</div>}
+            </div>
+            <button className="ibtn" style={{ position: "absolute", top: 18, right: 8, color: "#fff", zIndex: 4 }} onClick={(e) => { e.stopPropagation(); setStoryView(null); }}>✕</button>
+            <button className="ibtn" style={{ position: "absolute", top: "45%", left: 8, color: "#fff", zIndex: 4 }} onClick={(e) => { e.stopPropagation(); setStoryView((v) => (v && v.i > 0 ? { ...v, i: v.i - 1 } : v)); }}>‹</button>
+          </div>
+        </div>
+      )}
+      {sheet && sheet.type === "storynew" && (
+        <Sheet title="📸 قصة جديدة (24 ساعة)" onClose={closeSheet}>
+          <input type="file" accept="image/*" onChange={(e) => { const f = e.target.files[0]; if (f) addStory(f, storyBody); }} />
+          <input placeholder="نص اختياري مع القصة..." value={storyBody} onChange={(e) => setStoryBody(e.target.value)} style={{ marginTop: 8 }} />
+          <div className="muted">ستختفي قصتك تلقائيًا بعد 24 ساعة.</div>
+        </Sheet>
+      )}
+      {tour && (
+        <div className="overlay" style={{ alignItems: "center" }}>
+          <div className="authcard" style={{ margin: 16 }}>
+            <h2>👋 أهلًا بك في لَمّة</h2>
+            <ul style={{ paddingRight: 18, lineHeight: 2, fontSize: 14 }}>
+              <li>⭕ دوائر الأعلى: قصص تختفي بعد 24 ساعة، وبعدها مدن ليبيا.</li>
+              <li>♥ اضغط مرتين على الصورة للإعجاب الفوري.</li>
+              <li>📨 اضغط اسم أي مستخدم لفتح ملفه ومراسلته.</li>
+            </ul>
+            <button className="btn1" onClick={() => { setTour(false); localStorage.setItem("lamma-tour", "1"); }}>يلا نبدأ 🚀</button>
+          </div>
+        </div>
+      )}
       {showTop && <button className="totop" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>⬆</button>}
       <nav className="bottom">
         <button className={tab === "home" ? "on" : ""} onClick={() => setTab("home")}><Icon n="home" /></button>
@@ -890,6 +987,7 @@ function Feed({ profile, cities }) {
       {sheet && sheet.type === "compose" && (
         <Sheet title="منشور جديد" onClose={closeSheet}>
           <div className="chips">{categories.map((c) => (<button key={c.id} className={category === c.id ? "on" : ""} onClick={() => setCategory(c.id)}>{c.label}</button>))}</div>
+          {category === "market" && <input placeholder="السعر (مثال: 25 د.ل)" value={price} onChange={(e) => setPrice(e.target.value)} style={{ marginBottom: 8 }} />}
           <input placeholder="العنوان" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={120} />
           <textarea placeholder="اكتب التفاصيل..." value={body} onChange={(e) => setBody(e.target.value)} maxLength={1000} style={{ marginTop: 8 }} />
           <input type="file" accept="image/*" onChange={(e) => pickImage(e.target.files[0] || null)} style={{ marginTop: 8 }} />
@@ -919,6 +1017,9 @@ function Pulse({ profile, cities, onOpen }) {
     const { data } = await supabase.from("posts").select("*, profiles!posts_user_id_fkey(username), useful_votes!useful_votes_post_id_fkey(count)").order("created_at", { ascending: false }).limit(100);
     const list = (data || []).map((p) => ({ ...p, vc: p.useful_votes?.[0]?.count || 0 })).filter((p) => p.vc > 0 && p.city_id !== profile.city_id).sort((a, b) => b.vc - a.vc).slice(0, 30);
     setItems(list);
+    const cnt = {};
+    (data || []).forEach((p) => { cnt[p.user_id] = cnt[p.user_id] || { n: 0, u: p.profiles?.username }; cnt[p.user_id].n++; });
+    setBoard(Object.values(cnt).sort((a, b) => b.n - a.n).slice(0, 5));
   }
   function cityName(id) { return cities.find((c) => c.id === Number(id))?.name || ""; }
   return (
@@ -931,6 +1032,16 @@ function Pulse({ profile, cities, onOpen }) {
             {p.image_url ? <img src={p.image_url} alt="" /> : <span className="gtxt">{p.title}</span>}
             {p.image_url && <span className="gtxt">♥ {p.vc}</span>}
           </button>
+        ))}
+      </div>
+      <div className="card2" style={{ margin: 10 }}>
+        <h3>🏆 أنشط الأعضاء</h3>
+        {board.map((b, i) => (
+          <div className="msg-item" key={i}>
+            <span className="ava sm">{avaLetter(b.u)}</span>
+            <div className="msg-name">{i + 1}. @{b.u}</div>
+            <div className="msg-time">{b.n} منشور</div>
+          </div>
         ))}
       </div>
     </div>
