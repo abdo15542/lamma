@@ -105,6 +105,8 @@ jobs:
           shutil.copyfile(src, dst)
           print("call ringtone ok")
           PYEOF
+      - name: Add audio route bridge
+        run: python3 scripts/add_audio_route.py
       - name: Generate app icons
         run: |
           npm i -D @capacitor/assets
