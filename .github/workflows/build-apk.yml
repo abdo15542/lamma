@@ -44,8 +44,21 @@ jobs:
       - name: Add Android platform
         run: npx cap add android
 
-      - name: Sync Capacitor
+            - name: Sync Capacitor
         run: npx cap sync android
+      - name: Add call permissions
+        run: |
+          python3 - <<'PYEOF'
+          import io
+          p = "android/app/src/main/AndroidManifest.xml"
+          s = open(p, encoding="utf-8").read()
+          perms = '<uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.CAMERA" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n    '
+          if "RECORD_AUDIO" not in s:
+              s = s.replace("<application", perms + "<application", 1)
+              open(p, "w", encoding="utf-8").write(s)
+          cur = open(p, encoding="utf-8").read()
+          print("call permissions ok" if "RECORD_AUDIO" in cur else "FAILED")
+          PYEOF
 
       - name: Generate app icons
         run: |
