@@ -1214,6 +1214,7 @@ function Feed({ profile, cities }) {
 
 function Pulse({ profile, cities, onOpen }) {
   const [items, setItems] = useState([]);
+  const [board, setBoard] = useState([]);
   useEffect(() => { load(); }, []);
   async function load() {
     const { data } = await supabase.from("posts").select("*, profiles!posts_user_id_fkey(username, avatar_url), useful_votes!useful_votes_post_id_fkey(count)").order("created_at", { ascending: false }).limit(100);
