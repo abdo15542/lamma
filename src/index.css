@@ -87,6 +87,10 @@ body.dark .bottom button{color:#f5f5f5}
 body.dark .badge2,body.dark .chips button{background:#1e1e1e;color:#ddd;border-color:#333}
 body.dark .card2{border-color:#262626}
 body.dark .muted,body.dark .pwho span{color:#999}
+body.dark .stats{color:#bbb}
+body.dark .card2 ul{color:#ddd}
+body.dark .card2{background:#121212}
+body.dark .msg-time,body.dark .stat-cell span{color:#999}
 body.dark .sk{background:linear-gradient(90deg,#1a1a1a 25%,#222 50%,#1a1a1a 75%);background-size:200% 100%}
 body.dark .comment{border-color:#1a1a1a}
 body.dark .btn2{background:#1e1e1e;color:#ddd}
