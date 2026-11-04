@@ -491,6 +491,15 @@ function Feed({ profile, cities }) {
     const { data } = await supabase.from("saves").select("post_id").eq("user_id", profile.id);
     setSavedIds(new Set((data || []).map((x) => x.post_id)));
   }
+    async function openSavesWrap() {
+    setSheet({ type: "saves" }); setSheetLoading(true);
+    const { data: sv } = await supabase.from("saves").select("post_id").eq("user_id", profile.id);
+    const ids = (sv || []).map((x) => x.post_id);
+    if (ids.length === 0) { setSvList([]); setSheetLoading(false); return; }
+    const sel = "*, profiles!posts_user_id_fkey(username, is_admin, avatar_url, mood), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count), poll_options(id, label, position, poll_votes(count))";
+    const { data } = await supabase.from("posts").select(sel).in("id", ids).order("created_at", { ascending: false });
+    setSvList(data || []); setSheetLoading(false);
+  }
   async function loadMsgs() {
     const { count } = await supabase.from("messages").select("*", { count: "exact", head: true }).eq("to_id", profile.id).eq("read", false);
     setUnreadMsgs(count || 0);
@@ -1309,10 +1318,17 @@ function Me({ profile, cities, onInvite, onSaves, onStats, onEditBio, onMyPosts 
     setMe((m) => ({ ...m, cover_url: url })); flashNotice("تم تحديث غلافك 🖼");
   }
   const [copied, setCopied] = useState(false);
+  const [theme, setTheme] = useState(() => localStorage.getItem("lamma-theme") || "lamma");
+  const [mood, setMood] = useState(profile.mood || "");
+  const [notice, setNotice] = useState("");
+  function flashNotice(msg) { setNotice(msg); setTimeout(() => setNotice(""), 2000); }
+  function pickTheme(t) { setTheme(t); localStorage.setItem("lamma-theme", t); document.body.className = (localStorage.getItem("lamma-dark") === "1" ? "dark " : "") + "theme-" + t; flashNotice("تم تغيير الثيم 🎨"); }
+  function pickMood(e) { setMood(e); supabase.from("profiles").update({ mood: e }).eq("id", profile.id); flashNotice("تم تحديث حالتك " + e); }
   function cityName(id) { return cities.find((c) => c.id === Number(id))?.name || ""; }
   async function invite() { await onInvite(); setCopied(true); setTimeout(() => setCopied(false), 2500); }
   return (
     <div>
+            {notice && <div className="notice">{notice}</div>}
       <div style={{ position: "relative" }}>
         <div className="cover" style={{ backgroundImage: me.cover_url ? "url(" + me.cover_url + ")" : "linear-gradient(135deg,#0f766e,#134e4a)" }} />
         <label className="chip" style={{ position: "absolute", top: 8, insetInlineStart: 8, background: "#fff" }}>🖼 غلاف<input type="file" accept="image/*" hidden onChange={(e) => e.target.files[0] && uploadCover(e.target.files[0])} /></label>
