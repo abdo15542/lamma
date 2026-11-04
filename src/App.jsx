@@ -1403,7 +1403,13 @@ function Me({ profile, cities, onInvite, onSaves, onStats, onEditBio, onMyPosts 
 
 function UpdateNotice() {
   const [info, setInfo] = useState(null);
-  useEffect(() => { check(); }, []);
+  useEffect(() => {
+    check();
+    const t = setInterval(check, 300000);
+    const onVis = () => { if (!document.hidden) check(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
+  }, []);
   async function check() {
     try {
       const r = await fetch("https://api.github.com/repos/abdo15542/lamma/releases/tags/latest", { cache: "no-store" });
