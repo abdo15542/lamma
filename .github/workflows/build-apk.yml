@@ -60,6 +60,38 @@ jobs:
           print("call permissions ok" if "RECORD_AUDIO" in cur else "FAILED")
           PYEOF
 
+      - name: Add Firebase config
+        run: |
+          python3 - <<'PYEOF'
+          import os
+          src = "keys/google-services.json"
+          dst = "android/app/google-services.json"
+          if not os.path.exists(src):
+              print("no google-services.json in keys, skipping Firebase setup")
+          else:
+              import shutil
+              shutil.copyfile(src, dst)
+              root = open("android/build.gradle", encoding="utf-8").read()
+              if "com.google.gms:google-services" not in root:
+                  lines = root.split("\n")
+                  done = False
+                  for i, ln in enumerate(lines):
+                      if ln.strip().startswith("classpath"):
+                          lines.insert(i + 1, "        classpath 'com.google.gms:google-services:4.4.2'")
+                          done = True
+                          break
+                  if not done:
+                      raise SystemExit("FAILED: no classpath line in android/build.gradle")
+                  open("android/build.gradle", "w", encoding="utf-8").write("\n".join(lines))
+              app = open("android/app/build.gradle", encoding="utf-8").read()
+              if "com.google.gms.google-services" not in app:
+                  if "apply plugin: 'com.android.application'" in app:
+                      app = app.replace("apply plugin: 'com.android.application'", "apply plugin: 'com.android.application'\napply plugin: 'com.google.gms.google-services'", 1)
+                  else:
+                      raise SystemExit("FAILED: no com.android.application plugin line in android/app/build.gradle")
+                  open("android/app/build.gradle", "w", encoding="utf-8").write(app)
+              print("firebase config ok")
+          PYEOF
       - name: Generate app icons
         run: |
           npm i -D @capacitor/assets
