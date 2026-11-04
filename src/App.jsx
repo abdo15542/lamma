@@ -842,7 +842,7 @@ function Feed({ profile, cities }) {
   });
 
   const sortedPosts = sortBy === "top" ? [...posts].sort((a, b) => usefulCount(b) - usefulCount(a)) : posts;
-  const skelRow = <div className="skpost"><div className="sk head" /><div className="sk img" /></div>;,
+  const skelRow = <div className="skpost"><div className="sk head" /><div className="sk img" /></div>;
   return (
     <div className="app">
       {!online && <div className="notice" style={{ background: "#fef2f2", color: "#991b1b", borderColor: "#fca5a5" }}>📴 لا يوجد اتصال بالإنترنت</div>}
