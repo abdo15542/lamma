@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "./lib/supabase";
+import { PushNotifications } from "@capacitor/push-notifications";
 
 const ICE = [
   { urls: "stun:stun.l.google.com:19302" },
@@ -73,10 +74,29 @@ export default function CallBox({ profile }) {
     return pc;
   }
 
+  async function updateCallRow(callId, patch) {
+    if (!callId) return;
+    try { await supabase.from("calls").update(patch).eq("id", callId); } catch (e) {}
+  }
+
+  async function openPendingCall(callId) {
+    if (!callId) return;
+    if (callRef.current) return;
+    try {
+      const { data: row } = await supabase.from("calls").select("*").eq("id", callId).single();
+      if (!row || row.status !== "pending") return;
+      if (row.callee_id !== profileRef.current.id) return;
+      if (Date.now() - new Date(row.created_at).getTime() > 120000) return;
+      try { if (navigator.vibrate) navigator.vibrate([300, 200, 300]); } catch (e) {}
+      setCallBoth({ peerId: row.caller_id, peerName: row.caller_name || "مستخدم", kind: row.kind || "audio", dir: "in", status: "ringing", offer: row.sdp, msg: "", callId: row.id });
+    } catch (e) {}
+  }
+
   async function endCall(notifyPeer) {
     const c = callRef.current;
     if (notifyPeer && c) {
       try { await sendSignal(c.peerId, "call-end", {}); } catch (e) {}
+      await updateCallRow(c.callId, { status: "ended" });
     }
     try { if (pcRef.current) pcRef.current.close(); } catch (e) {}
     try {
@@ -94,17 +114,25 @@ export default function CallBox({ profile }) {
 
   async function startCall(peerId, peerName, kind) {
     if (callRef.current) return;
+    let callId = null;
+    try {
+      const { data: row } = await supabase.from("calls").insert({ caller_id: profileRef.current.id, caller_name: profileRef.current.username, callee_id: peerId, kind, status: "pending" }).select("id").single();
+      callId = row ? row.id : null;
+    } catch (e) {}
     try {
       const stream = await navigator.mediaDevices.getUserMedia(mediaConstraints(kind));
       localStreamRef.current = stream;
-      setCallBoth({ peerId, peerName, kind, dir: "out", status: "calling", msg: "" });
+      setCallBoth({ peerId, peerName, kind, dir: "out", status: "calling", msg: "", callId });
       const pc = await makePC(peerId);
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
       await limitVideoBitrate(pc);
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      await sendSignal(peerId, "call-offer", { from: profileRef.current.id, fromName: profileRef.current.username, kind, sdp: offer });
+      await updateCallRow(callId, { sdp: offer });
+      await sendSignal(peerId, "call-offer", { from: profileRef.current.id, fromName: profileRef.current.username, kind, sdp: offer, callId });
+      if (callId) { try { await supabase.functions.invoke("send-call-push", { body: { callId } }); } catch (e) {} }
     } catch (e) {
+      await updateCallRow(callId, { status: "ended" });
       setCallBoth({ peerId, peerName, kind, dir: "out", status: "ended", msg: "تعذر الوصول للميكروفون أو الكاميرا — وافق على الإذن وحاول من جديد" });
     }
   }
@@ -122,8 +150,10 @@ export default function CallBox({ profile }) {
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       await sendSignal(c.peerId, "call-answer", { sdp: answer });
+      await updateCallRow(c.callId, { status: "accepted" });
       setCallBoth({ ...c, status: "active" });
     } catch (e) {
+      await updateCallRow(c.callId, { status: "ended" });
       setCallBoth({ ...c, status: "ended", msg: "تعذر الوصول للميكروفون أو الكاميرا — وافق على الإذن وحاول من جديد" });
     }
   }
@@ -131,6 +161,7 @@ export default function CallBox({ profile }) {
   async function declineCall() {
     const c = callRef.current;
     if (c) { try { await sendSignal(c.peerId, "call-decline", {}); } catch (e) {} }
+    await updateCallRow(c ? c.callId : null, { status: "declined" });
     endCall(false);
   }
 
@@ -148,9 +179,10 @@ export default function CallBox({ profile }) {
     const ch = supabase.channel("call:user:" + profile.id);
     ch.on("broadcast", { event: "call-offer" }, ({ payload }) => {
       const p = payload || {};
+      if (callRef.current && callRef.current.callId && p.callId && callRef.current.callId === p.callId) return;
       if (callRef.current) { sendSignal(p.from, "call-busy", {}); return; }
       try { if (navigator.vibrate) navigator.vibrate([300, 200, 300]); } catch (e) {}
-      setCallBoth({ peerId: p.from, peerName: p.fromName || "مستخدم", kind: p.kind || "audio", dir: "in", status: "ringing", offer: p.sdp, msg: "" });
+      setCallBoth({ peerId: p.from, peerName: p.fromName || "مستخدم", kind: p.kind || "audio", dir: "in", status: "ringing", offer: p.sdp, msg: "", callId: p.callId || null });
     });
     ch.on("broadcast", { event: "call-answer" }, async ({ payload }) => {
       const pc = pcRef.current;
@@ -179,6 +211,37 @@ export default function CallBox({ profile }) {
     ch.on("broadcast", { event: "call-end" }, () => { endCall(false); });
     ch.subscribe();
     return () => { try { supabase.removeChannel(ch); } catch (e) {} };
+  }, [profile && profile.id]);
+
+  useEffect(() => {
+    if (!profile || !profile.id) return undefined;
+    let regHandle = null;
+    let recvHandle = null;
+    let actHandle = null;
+    (async () => {
+      try {
+        let perm = await PushNotifications.checkPermissions();
+        if (perm.receive !== "granted") perm = await PushNotifications.requestPermissions();
+        if (perm.receive !== "granted") return;
+        await PushNotifications.register();
+        regHandle = await PushNotifications.addListener("registration", async (token) => {
+          try { await supabase.from("push_tokens").upsert({ user_id: profileRef.current.id, token: token.value, platform: "android" }, { onConflict: "token" }); } catch (e) {}
+        });
+        recvHandle = await PushNotifications.addListener("pushNotificationReceived", (n) => {
+          const d = (n && n.data) || {};
+          if (d.type === "call" && d.callId) openPendingCall(d.callId);
+        });
+        actHandle = await PushNotifications.addListener("pushNotificationActionPerformed", (action) => {
+          const d = (action && action.notification && action.notification.data) || {};
+          if (d.type === "call" && d.callId) openPendingCall(d.callId);
+        });
+      } catch (e) {}
+    })();
+    return () => {
+      try { if (regHandle) regHandle.remove(); } catch (e) {}
+      try { if (recvHandle) recvHandle.remove(); } catch (e) {}
+      try { if (actHandle) actHandle.remove(); } catch (e) {}
+    };
   }, [profile && profile.id]);
 
   useEffect(() => {
