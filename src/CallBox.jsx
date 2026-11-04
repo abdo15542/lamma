@@ -223,6 +223,16 @@ export default function CallBox({ profile }) {
         let perm = await PushNotifications.checkPermissions();
         if (perm.receive !== "granted") perm = await PushNotifications.requestPermissions();
         if (perm.receive !== "granted") return;
+        try {
+          await PushNotifications.createChannel({
+            id: "lamma_calls",
+            name: "مكالمات لَمّة",
+            description: "تنبيهات المكالمات الواردة",
+            importance: 5,
+            vibration: true,
+            sound: "call_ringtone",
+          });
+        } catch (e) {}
         await PushNotifications.register();
         regHandle = await PushNotifications.addListener("registration", async (token) => {
           try { await supabase.from("push_tokens").upsert({ user_id: profileRef.current.id, token: token.value, platform: "android" }, { onConflict: "token" }); } catch (e) {}
