@@ -235,7 +235,7 @@ function Sheet({ title, onClose, children }) {
   );
 }
 
-const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, onReport, city, cat, saved, onSave, onPin, onMessage, canPin, onDelete, onOpenProfile, onZoom, onEdit, myVotes, votePoll, onSeller, rxnCount, rxnMine, onReact }) {
+const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, onReport, city, cat, saved, onSave, onPin, onMessage, canPin, onDelete, onOpenProfile, onZoom, onEdit, myVotes = new Set(), votePoll = () => {}, onSeller, rxnCount = {}, rxnMine = [], onReact = () => {} }) {
   const [boom, setBoom] = useState(false);
   function dbl() { if (!voted) onLike(post.id); setBoom(true); setTimeout(() => setBoom(false), 800); }
   return (
@@ -837,11 +837,12 @@ function Feed({ profile, cities }) {
     onDelete: (p.user_id === profile.id || profile.is_admin) ? () => { if (delId === p.id) deletePost(p.id); else { setDelId(p.id); flashNotice("اضغط مرة أخرى لتأكيد الحذف"); setTimeout(() => setDelId(null), 2500); } } : null,
     onOpenProfile: () => openProfile(p.user_id), onZoom: () => setSheet({ type: "zoom", src: p.image_url }),
     onEdit: p.user_id === profile.id ? () => { setEditTitle(p.title); setEditBody(p.body); setSheet({ type: "edit", post: p }); } : null,
-    city: cityName, cat: categoryLabel
+    city: cityName, cat: categoryLabel,
+    myVotes, votePoll, rxnCount, rxnMine, onReact: toggleReaction
   });
 
   const sortedPosts = sortBy === "top" ? [...posts].sort((a, b) => usefulCount(b) - usefulCount(a)) : posts;
-  const skelRow = <div className="skpost"><div className="sk head" /><div className="sk img" /></div>;
+  const skelRow = <div className="skpost"><div className="sk head" /><div className="sk img" /></div>;,
   return (
     <div className="app">
       {!online && <div className="notice" style={{ background: "#fef2f2", color: "#991b1b", borderColor: "#fca5a5" }}>📴 لا يوجد اتصال بالإنترنت</div>}
