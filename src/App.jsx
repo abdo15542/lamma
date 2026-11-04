@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, memo, Component } from "react";
 import { supabase } from "./lib/supabase";
+import CallBox from "./CallBox.jsx";
 
 const BUILD_SHA = typeof __BUILD_SHA__ !== "undefined" ? __BUILD_SHA__ : "dev";
 
@@ -872,6 +873,7 @@ function Feed({ profile, cities }) {
       </header>
       {notice && <div className="notice">{notice}</div>}
       <UpdateNotice />
+      <CallBox profile={profile} />
       {tab === "home" && (
         <div onTouchStart={ts} onTouchMove={tm} onTouchEnd={te}>
           <div className={"pull " + (pull > 10 ? "on" : "")}><Icon n="refresh" s={20} /></div>
@@ -1033,6 +1035,10 @@ function Feed({ profile, cities }) {
       )}
       {sheet && sheet.type === "chat" && (
         <Sheet title={"💬 @" + sheet.peerName} onClose={closeSheet}>
+          <div style={{ display: "flex", gap: 8, padding: "0 8px 8px" }}>
+            <button className="btn1" onClick={() => window.dispatchEvent(new CustomEvent("lamma-call", { detail: { peerId: sheet.peerId, peerName: sheet.peerName, kind: "audio" } }))}>📞 اتصال صوتي</button>
+            <button className="btn1" onClick={() => window.dispatchEvent(new CustomEvent("lamma-call", { detail: { peerId: sheet.peerId, peerName: sheet.peerName, kind: "video" } }))}>🎥 مكالمة فيديو</button>
+          </div>
           {sheetLoading && skelRow}
           <div style={{ maxHeight: 320, overflowY: "auto", padding: 8 }}>
             {(sheet.messages || []).map((m) => (
