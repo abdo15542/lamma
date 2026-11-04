@@ -44,7 +44,7 @@ jobs:
       - name: Add Android platform
         run: npx cap add android
 
-            - name: Sync Capacitor
+      - name: Sync Capacitor
         run: npx cap sync android
       - name: Add call permissions
         run: |
