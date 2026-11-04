@@ -6,6 +6,24 @@ const ICE = [
   { urls: "stun:stun1.l.google.com:19302" },
 ];
 
+function mediaConstraints(kind) {
+  return {
+    audio: { echoCancellation: true, noiseSuppression: true },
+    video: kind === "video" ? { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } : false,
+  };
+}
+
+async function limitVideoBitrate(pc) {
+  try {
+    const vs = pc.getSenders().find((s) => s.track && s.track.kind === "video");
+    if (vs) {
+      const prm = vs.getParameters();
+      prm.encodings = [{ maxBitrate: 2500000 }];
+      await vs.setParameters(prm);
+    }
+  } catch (e) {}
+}
+
 export default function CallBox({ profile }) {
   const [call, setCall] = useState(null);
   const [muted, setMuted] = useState(false);
@@ -48,7 +66,7 @@ export default function CallBox({ profile }) {
       const s = e.streams && e.streams[0];
       if (s) {
         remoteStreamRef.current = s;
-        if (remoteVidRef.current) remoteVidRef.current.srcObject = s;
+        if (remoteVidRef.current) { remoteVidRef.current.srcObject = s; try { const pr = remoteVidRef.current.play(); if (pr) pr.catch(() => {}); } catch (e) {} }
       }
     };
     pcRef.current = pc;
@@ -77,11 +95,12 @@ export default function CallBox({ profile }) {
   async function startCall(peerId, peerName, kind) {
     if (callRef.current) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: kind === "video" });
+      const stream = await navigator.mediaDevices.getUserMedia(mediaConstraints(kind));
       localStreamRef.current = stream;
       setCallBoth({ peerId, peerName, kind, dir: "out", status: "calling", msg: "" });
       const pc = await makePC(peerId);
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+      await limitVideoBitrate(pc);
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       await sendSignal(peerId, "call-offer", { from: profileRef.current.id, fromName: profileRef.current.username, kind, sdp: offer });
@@ -94,10 +113,11 @@ export default function CallBox({ profile }) {
     const c = callRef.current;
     if (!c || !c.offer) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: c.kind === "video" });
+      const stream = await navigator.mediaDevices.getUserMedia(mediaConstraints(c.kind));
       localStreamRef.current = stream;
       const pc = await makePC(c.peerId);
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+      await limitVideoBitrate(pc);
       await pc.setRemoteDescription(new RTCSessionDescription(c.offer));
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
@@ -163,7 +183,7 @@ export default function CallBox({ profile }) {
 
   useEffect(() => {
     if (localVidRef.current && localStreamRef.current) localVidRef.current.srcObject = localStreamRef.current;
-    if (remoteVidRef.current && remoteStreamRef.current) remoteVidRef.current.srcObject = remoteStreamRef.current;
+    if (remoteVidRef.current && remoteStreamRef.current) { remoteVidRef.current.srcObject = remoteStreamRef.current; try { const pr = remoteVidRef.current.play(); if (pr) pr.catch(() => {}); } catch (e) {} }
   }, [call]);
 
   useEffect(() => {
@@ -209,7 +229,7 @@ export default function CallBox({ profile }) {
       {isVideo && call.status === "active" && (
         <video ref={localVidRef} autoPlay playsInline muted style={{ position: "absolute", bottom: 110, right: 16, width: 110, height: 150, background: "#222", borderRadius: 12, objectFit: "cover", border: "2px solid #fff" }} />
       )}
-      {!isVideo && <video ref={remoteVidRef} autoPlay playsInline style={{ display: "none" }} />}
+      {!isVideo && <audio ref={remoteVidRef} autoPlay playsInline />}
       <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
         {call.status === "ringing" && call.dir === "in" && (
           <button onClick={acceptCall} style={{ background: "#16a34a", color: "#fff", border: 0, borderRadius: 999, padding: "14px 22px", fontSize: 18 }}>✅ قبول</button>
