@@ -8,7 +8,7 @@ const ICE = [
 
 function mediaConstraints(kind) {
   return {
-    audio: { echoCancellation: true, noiseSuppression: true },
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     video: kind === "video" ? { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } : false,
   };
 }
