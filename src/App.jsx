@@ -660,11 +660,12 @@ function Feed({ profile, cities }) {
     try { await navigator.clipboard.writeText(text); flashNotice("تم نسخ بطاقة المنشور ✔ الصقها في واتساب"); } catch (e) { setNotice(text); }
   }
   async function doSearch(q) {
-    if (!q || !q.trim()) { setSRes([]); return; }
+    if (!q || !q.trim()) { setSRes([]); setPeopleRes([]); return; }
     setSBusy(true);
     const term = "%" + q.trim() + "%";
     const { data } = await supabase.from("posts").select("*, profiles!posts_user_id_fkey(username, avatar_url), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)").or("title.ilike." + term + ",body.ilike." + term).order("created_at", { ascending: false }).limit(20);
-    setSRes(data || []); setSBusy(false);
+    const { data: ppl } = await supabase.from("profiles").select("id, username, avatar_url, city_id").ilike("username", term).limit(20);
+    setSRes(data || []); setPeopleRes(ppl || []); setSBusy(false);
   }
   function ts(e) { if (window.scrollY <= 0) setStartY(e.touches[0].clientY); }
   function tm(e) { if (startY != null && window.scrollY <= 0) { const dy = e.touches[0].clientY - startY; if (dy > 0) setPull(Math.min(dy, 90)); } }
@@ -1224,6 +1225,7 @@ function Feed({ profile, cities }) {
 function Pulse({ profile, cities, onOpen }) {
   const [items, setItems] = useState([]);
   const [board, setBoard] = useState([]);
+  const [cityBoard, setCityBoard] = useState([]);
   useEffect(() => { load(); }, []);
   async function load() {
     const { data } = await supabase.from("posts").select("*, profiles!posts_user_id_fkey(username, avatar_url), useful_votes!useful_votes_post_id_fkey(count)").order("created_at", { ascending: false }).limit(100);
@@ -1232,6 +1234,9 @@ function Pulse({ profile, cities, onOpen }) {
     const cnt = {};
     (data || []).forEach((p) => { cnt[p.user_id] = cnt[p.user_id] || { n: 0, u: p.profiles?.username }; cnt[p.user_id].n++; });
     setBoard(Object.values(cnt).sort((a, b) => b.n - a.n).slice(0, 5));
+    const cc = {};
+    (data || []).forEach((p) => { if (p.city_id != null) cc[p.city_id] = (cc[p.city_id] || 0) + 1; });
+    setCityBoard(Object.entries(cc).map(([id, n]) => ({ id: Number(id), n })).sort((a, b) => b.n - a.n).slice(0, 5));
   }
   function cityName(id) { return cities.find((c) => c.id === Number(id))?.name || ""; }
   return (
@@ -1253,6 +1258,16 @@ function Pulse({ profile, cities, onOpen }) {
             <span className="ava sm">{avaLetter(b.u)}</span>
             <div className="msg-name">{i + 1}. @{b.u}</div>
             <div className="msg-time">{b.n} منشور</div>
+          </div>
+        ))}
+      </div>
+      <div className="card2" style={{ margin: 10 }}>
+        <h3>🏙️ أكثر المدن نشاطًا</h3>
+        <div className="muted" style={{ fontSize: 12 }}>ضمن آخر 100 منشور</div>
+        {cityBoard.map((c, i) => (
+          <div className="msg-item" key={c.id}>
+            <div className="msg-name">{i + 1}. {cityName(c.id)}</div>
+            <div className="msg-time">{c.n} منشور</div>
           </div>
         ))}
       </div>
