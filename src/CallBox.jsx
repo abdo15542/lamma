@@ -9,7 +9,7 @@ const ICE = [
 
 function mediaConstraints(kind) {
   return {
-    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
     video: kind === "video" ? { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } : false,
   };
 }
@@ -28,6 +28,8 @@ async function limitVideoBitrate(pc) {
 export default function CallBox({ profile }) {
   const [call, setCall] = useState(null);
   const [muted, setMuted] = useState(false);
+  const [audioRoute, setAudioRoute] = useState("earpiece");
+  const [btAvail, setBtAvail] = useState(false);
   const [camOff, setCamOff] = useState(false);
   const [secs, setSecs] = useState(0);
   const pcRef = useRef(null);
@@ -283,6 +285,40 @@ export default function CallBox({ profile }) {
     setCamOff(next);
   }
 
+  function refreshRoute() {
+    try {
+      const b = window.AudioRoute;
+      if (!b || !b.getState) return;
+      const s = String(b.getState());
+      const get = (k) => { const m = s.match(new RegExp(k + "=(\\d)")); return m ? m[1] === "1" : false; };
+      setBtAvail(get("bt"));
+      if (get("bluetooth")) setAudioRoute("bluetooth");
+      else if (get("speaker")) setAudioRoute("speaker");
+      else setAudioRoute("earpiece");
+    } catch (e) {}
+  }
+  function setRoute(r) {
+    try {
+      const b = window.AudioRoute;
+      if (!b) return;
+      if (r === "speaker") b.setSpeaker();
+      else if (r === "bluetooth") b.setBluetooth();
+      else b.setEarpiece();
+      setAudioRoute(r);
+      setTimeout(refreshRoute, 400);
+    } catch (e) {}
+  }
+  useEffect(() => {
+    if (call && call.status === "active") {
+      try {
+        const b = window.AudioRoute;
+        if (b) {
+          if (call.kind === "video") b.setSpeaker(); else b.setEarpiece();
+          refreshRoute();
+        }
+      } catch (e) {}
+    }
+  }, [call && call.status]);
   function fmt(s) {
     const m = Math.floor(s / 60);
     const r = s % 60;
@@ -303,6 +339,15 @@ export default function CallBox({ profile }) {
         <video ref={localVidRef} autoPlay playsInline muted style={{ position: "absolute", bottom: 110, right: 16, width: 110, height: 150, background: "#222", borderRadius: 12, objectFit: "cover", border: "2px solid #fff" }} />
       )}
       {!isVideo && <audio ref={remoteVidRef} autoPlay playsInline />}
+      {call.status === "active" && typeof window.AudioRoute !== "undefined" && (
+        <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+          <button onClick={() => setRoute("earpiece")} style={{ background: audioRoute === "earpiece" ? "#0f766e" : "#1f2937", color: "#fff", border: "1px solid #555", borderRadius: 999, padding: "10px 14px" }}>🎧 سماعة الأذن</button>
+          <button onClick={() => setRoute("speaker")} style={{ background: audioRoute === "speaker" ? "#0f766e" : "#1f2937", color: "#fff", border: "1px solid #555", borderRadius: 999, padding: "10px 14px" }}>🔊 السبيكر</button>
+          {btAvail && (
+            <button onClick={() => setRoute("bluetooth")} style={{ background: audioRoute === "bluetooth" ? "#0f766e" : "#1f2937", color: "#fff", border: "1px solid #555", borderRadius: 999, padding: "10px 14px" }}>📶 بلوتوث</button>
+          )}
+        </div>
+      )}
       <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
         {call.status === "ringing" && call.dir === "in" && (
           <button onClick={acceptCall} style={{ background: "#16a34a", color: "#fff", border: 0, borderRadius: 999, padding: "14px 22px", fontSize: 18 }}>✅ قبول</button>
