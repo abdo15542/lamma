@@ -450,6 +450,7 @@ function Feed({ profile, cities }) {
   }
   async function loadPosts() {
     setSkel(true);
+    try {
     const sel = "*, profiles!posts_user_id_fkey(username, is_admin, avatar_url, mood), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count), poll_options(id, label, position, poll_votes(count))";
     let q = supabase.from("posts").select(sel).order("is_pinned", { ascending: false }).order("created_at", { ascending: false }).limit(100);
     if (tab === "home") q = q.eq("city_id", selectedCityId);
@@ -459,6 +460,7 @@ function Feed({ profile, cities }) {
     const { data, error } = await q;
     if (error) setMessage("خطأ جلب: " + error.message);
     else setPosts(data || []);
+    loadReactionsFor(data || []);
     const { data: v } = await supabase.from("useful_votes").select("post_id").eq("user_id", profile.id);
     setVotedIds(new Set((v || []).map((x) => x.post_id)));
     const optIds = (data || []).flatMap((p) => (p.poll_options || []).map((x) => x.id));
@@ -466,7 +468,7 @@ function Feed({ profile, cities }) {
       const mv = await supabase.from("poll_votes").select("option_id").in("option_id", optIds).eq("user_id", profile.id);
       setMyVotes(new Set((mv.data || []).map((x) => x.option_id)));
     } else setMyVotes(new Set());
-    setSkel(false);
+    } finally { setSkel(false); }
   }
   async function loadComments(postId) {
     const { data } = await supabase.from("comments").select("*, profiles!comments_user_id_fkey(username)").eq("post_id", postId).order("created_at", { ascending: true });
