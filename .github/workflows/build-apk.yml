@@ -92,6 +92,19 @@ jobs:
                   open("android/app/build.gradle", "w", encoding="utf-8").write(app)
               print("firebase config ok")
           PYEOF
+      - name: Add call ringtone
+        run: |
+          python3 - <<'PYEOF'
+          import os, shutil, sys
+          src = "assets/call_ringtone.wav"
+          dst = "android/app/src/main/res/raw/call_ringtone.wav"
+          if not os.path.exists(src):
+              print("FAILED: assets/call_ringtone.wav missing from repo")
+              sys.exit(1)
+          os.makedirs(os.path.dirname(dst), exist_ok=True)
+          shutil.copyfile(src, dst)
+          print("call ringtone ok")
+          PYEOF
       - name: Generate app icons
         run: |
           npm i -D @capacitor/assets
