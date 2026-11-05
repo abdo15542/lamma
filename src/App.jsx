@@ -1318,10 +1318,20 @@ function Pulse({ profile, cities, onOpen }) {
   );
 }
 
-function Admin() {
+function Admin({ profile, cities, approvalOn, setApprovalOn }) {
+  const [sub, setSub] = useState("reports");
   const [reports, setReports] = useState([]);
   const [stats, setStats] = useState(null);
   const [confirmId, setConfirmId] = useState(null);
+  const [confirmAll, setConfirmAll] = useState(null);
+  const [pending, setPending] = useState([]);
+  const [q, setQ] = useState("");
+  const [members, setMembers] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [growth, setGrowth] = useState(null);
+  const isAdmin = profile.is_admin;
+  const cityName = (id) => (cities.find((c) => c.id === id) || {}).name || "؟";
+  const actionLabel = (a) => ({ delete_post: "حذف منشور", pin_post: "تثبيت منشور", unpin_post: "إلغاء تثبيت منشور", ban_user: "حظر عضو", unban_user: "إلغاء حظر عضو", mute_user: "كتم عضو 24 ساعة", unmute_user: "إلغاء كتم عضو", delete_all_posts: "حذف كل منشورات عضو", grant_moderator: "منح دور مشرف", revoke_moderator: "سحب دور مشرف", approve_post: "الموافقة على منشور", reject_post: "رفض منشور", dismiss_report: "تجاهل بلاغ", approval_on: "تفعيل مراجعة المنشورات", approval_off: "إيقاف مراجعة المنشورات" }[a] || a);
   useEffect(() => { load(); }, []);
   async function load() {
     const { data } = await supabase.from("reports").select("*, posts(title, body), profiles!reports_user_id_fkey(username)").order("created_at", { ascending: false });
@@ -1332,25 +1342,144 @@ function Admin() {
       supabase.from("comments").select("*", { count: "exact", head: true })
     ]);
     setStats({ u: u.count || 0, p: p.count || 0, c: c.count || 0 });
+    loadPending(); loadLogs(); loadGrowth();
   }
-  async function deletePost(postId) { await supabase.from("posts").delete().eq("id", postId); setConfirmId(null); load(); }
-  async function dismiss(id) { await supabase.from("reports").delete().eq("id", id); load(); }
+  async function loadPending() {
+    const { data } = await supabase.from("posts").select("*, profiles!posts_user_id_fkey(username, avatar_url)").eq("status", "pending").order("created_at", { ascending: false }).limit(50);
+    setPending(data || []);
+  }
+  async function loadLogs() {
+    const { data } = await supabase.from("admin_logs").select("*").order("created_at", { ascending: false }).limit(50);
+    const ids = [...new Set((data || []).map((x) => x.admin_id).filter(Boolean))];
+    let names = {};
+    if (ids.length) { const { data: ps } = await supabase.from("profiles").select("id, username").in("id", ids); (ps || []).forEach((p) => { names[p.id] = p.username; }); }
+    setLogs((data || []).map((x) => ({ ...x, adminName: names[x.admin_id] || "؟" })));
+  }
+  async function loadGrowth() {
+    const { data: ps } = await supabase.from("posts").select("created_at, city_id").order("created_at", { ascending: false }).limit(500);
+    const { data: us } = await supabase.from("profiles").select("joined_at").order("joined_at", { ascending: false }).limit(500);
+    const days = [];
+    for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); const key = d.toISOString().slice(0, 10); days.push({ key, p: 0, u: 0 }); }
+    (ps || []).forEach((x) => { const k = (x.created_at || "").slice(0, 10); const d = days.find((y) => y.key === k); if (d) d.p++; });
+    (us || []).forEach((x) => { const k = (x.joined_at || "").slice(0, 10); const d = days.find((y) => y.key === k); if (d) d.u++; });
+    const cc = {};
+    (ps || []).forEach((x) => { if (x.city_id != null) cc[x.city_id] = (cc[x.city_id] || 0) + 1; });
+    setGrowth({ days, topCities: Object.entries(cc).map(([id, n]) => ({ id: Number(id), n })).sort((a, b) => b.n - a.n).slice(0, 5) });
+  }
+  async function deletePost(postId) { await supabase.from("posts").delete().eq("id", postId); await logAdmin(profile.id, "delete_post", "post", postId, null); setConfirmId(null); load(); }
+  async function dismiss(id) { await supabase.from("reports").delete().eq("id", id); await logAdmin(profile.id, "dismiss_report", "report", id, null); load(); }
+  async function review(postId, ok) { await supabase.from("posts").update({ status: ok ? "approved" : "rejected" }).eq("id", postId); await logAdmin(profile.id, ok ? "approve_post" : "reject_post", "post", postId, null); loadPending(); }
+  async function searchMembers(term) {
+    setQ(term);
+    if (!term.trim()) { setMembers([]); return; }
+    const { data } = await supabase.from("profiles").select("id, username, city_id, is_admin, is_moderator, is_banned, muted_until, joined_at").ilike("username", "%" + term.trim() + "%").order("created_at", { ascending: false }).limit(30);
+    setMembers(data || []);
+  }
+  async function banMember(m, ban) { await supabase.from("profiles").update({ is_banned: ban }).eq("id", m.id); await logAdmin(profile.id, ban ? "ban_user" : "unban_user", "user", m.id, "@" + m.username); searchMembers(q); }
+  async function muteMember(m, mute) { await supabase.from("profiles").update({ muted_until: mute ? new Date(Date.now() + 24 * 3600 * 1000).toISOString() : null }).eq("id", m.id); await logAdmin(profile.id, mute ? "mute_user" : "unmute_user", "user", m.id, "@" + m.username); searchMembers(q); }
+  async function deleteAllPosts(m) { await supabase.from("posts").delete().eq("user_id", m.id); await logAdmin(profile.id, "delete_all_posts", "user", m.id, "@" + m.username); searchMembers(q); }
+  async function setMod(m, mod) { await supabase.from("profiles").update({ is_moderator: mod }).eq("id", m.id); await logAdmin(profile.id, mod ? "grant_moderator" : "revoke_moderator", "user", m.id, "@" + m.username); searchMembers(q); }
+  async function toggleApproval() {
+    const next = !approvalOn;
+    await supabase.from("admin_settings").update({ value: next ? "true" : "false" }).eq("key", "post_approval");
+    setApprovalOn(next); await logAdmin(profile.id, next ? "approval_on" : "approval_off", "setting", "post_approval", null);
+  }
   return (
     <div>
-      <div className="cityline"><b>👑 لوحة الإدارة</b><span className="muted">{reports.length} بلاغ</span></div>
-      {stats && <div className="stats"><span>👥 {stats.u} مستخدم</span><span>📝 {stats.p} منشور</span><span>💬 {stats.c} تعليق</span></div>}
-      {reports.length === 0 && <div className="empty">لا بلاغات. المجتمع نظيف ✔</div>}
-      {reports.map((r) => (
-        <div className="card2" key={r.id}>
-          <span className="badge2">🚨 {r.reason}</span>
-          <div className="pcap" style={{ padding: "8px 0 0" }}><b>{r.posts?.title || "(محذوف)"}</b> {r.posts?.body}</div>
-          <div className="muted">المبلِّغ: @{r.profiles?.username}</div>
-          {r.posts && (confirmId === r.post_id
-            ? <button className="btn1" onClick={() => deletePost(r.post_id)}>⚠️ تأكيد الحذف نهائيًا</button>
-            : <button className="btn2" onClick={() => setConfirmId(r.post_id)}>🗑 حذف المنشور</button>)}
-          <button className="btn2" onClick={() => dismiss(r.id)}>تجاهل البلاغ</button>
+      <div className="cityline"><b>👑 لوحة الإدارة</b><span className="muted">{reports.length} بلاغ · {pending.length} بانتظار المراجعة</span></div>
+      {isAdmin && (
+        <div className="card2">
+          <b>⚙️ مراجعة المنشورات قبل النشر</b>
+          <div className="muted">عند التفعيل، تنتظر المنشورات الجديدة موافقتك قبل أن تظهر للجميع.</div>
+          <button className="btn1" onClick={toggleApproval} style={{ marginTop: 8 }}>{approvalOn ? "إيقاف المراجعة" : "تفعيل المراجعة"}</button>
+          <span className="muted" style={{ marginRight: 8 }}>{approvalOn ? "مفعّلة الآن ✅" : "متوقفة الآن"}</span>
         </div>
-      ))}
+      )}
+      <div className="chips" style={{ margin: "10px 0" }}>
+        <button className={sub === "reports" ? "on" : ""} onClick={() => setSub("reports")}>🚨 البلاغات ({reports.length})</button>
+        <button className={sub === "review" ? "on" : ""} onClick={() => setSub("review")}>⏳ المراجعة ({pending.length})</button>
+        {isAdmin && <button className={sub === "members" ? "on" : ""} onClick={() => setSub("members")}>👥 الأعضاء</button>}
+        {isAdmin && <button className={sub === "log" ? "on" : ""} onClick={() => setSub("log")}>📋 السجل</button>}
+        <button className={sub === "stats" ? "on" : ""} onClick={() => setSub("stats")}>📊 الإحصائيات</button>
+      </div>
+      {sub === "reports" && (
+        <div>
+          {reports.length === 0 && <div className="empty">لا بلاغات. المجتمع نظيف ✔</div>}
+          {reports.map((r) => (
+            <div className="card2" key={r.id}>
+              <span className="badge2">🚨 {r.reason}</span>
+              <div className="pcap" style={{ padding: "8px 0 0" }}><b>{r.posts?.title || "(محذوف)"}</b> {r.posts?.body}</div>
+              <div className="muted">المبلِّغ: @{r.profiles?.username}</div>
+              {r.posts && (confirmId === r.post_id
+                ? <button className="btn1" onClick={() => deletePost(r.post_id)}>⚠️ تأكيد الحذف نهائيًا</button>
+                : <button className="btn2" onClick={() => setConfirmId(r.post_id)}>🗑 حذف المنشور</button>)}
+              <button className="btn2" onClick={() => dismiss(r.id)}>تجاهل البلاغ</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {sub === "review" && (
+        <div>
+          {pending.length === 0 && <div className="empty">لا منشورات بانتظار المراجعة ✔</div>}
+          {pending.map((p) => (
+            <div className="card2" key={p.id}>
+              <div className="muted">@{p.profiles?.username} · {timeAgo(p.created_at)}</div>
+              <b>{p.title}</b>
+              <div style={{ fontSize: 13 }}>{p.body}</div>
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <button className="btn1" onClick={() => review(p.id, true)}>✅ موافقة ونشر</button>
+                <button className="btn2" onClick={() => review(p.id, false)}>✕ رفض</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {sub === "members" && isAdmin && (
+        <div>
+          <input type="text" placeholder="ابحث عن عضو بالاسم..." value={q} onChange={(e) => searchMembers(e.target.value)} />
+          {members.map((m) => (
+            <div className="card2" key={m.id} style={{ marginTop: 8 }}>
+              <b>@{m.username}</b> {m.is_admin ? <span className="badge2">👑 أدمن</span> : m.is_moderator ? <span className="badge2">🛡️ مشرف</span> : null}
+              <div className="muted">{cityName(m.city_id)} · عضو منذ {new Date(m.joined_at || Date.now()).toLocaleDateString("ar-LY")}{m.is_banned ? " · 🚫 محظور" : ""}{m.muted_until && new Date(m.muted_until) > new Date() ? " · 🔇 مكتوم حتى " + new Date(m.muted_until).toLocaleString("ar-LY") : ""}</div>
+              {m.id !== profile.id && !m.is_admin && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                  <button className="btn2" onClick={() => banMember(m, !m.is_banned)}>{m.is_banned ? "إلغاء الحظر" : "🚫 حظر"}</button>
+                  <button className="btn2" onClick={() => muteMember(m, !(m.muted_until && new Date(m.muted_until) > new Date()))}>{m.muted_until && new Date(m.muted_until) > new Date() ? "إلغاء الكتم" : "🔇 كتم 24 ساعة"}</button>
+                  {confirmAll === m.id
+                    ? <button className="btn1" onClick={() => { deleteAllPosts(m); setConfirmAll(null); }}>⚠️ تأكيد حذف كل منشوراته</button>
+                    : <button className="btn2" onClick={() => setConfirmAll(m.id)}>🗑 حذف كل منشوراته</button>}
+                  <button className="btn2" onClick={() => setMod(m, !m.is_moderator)}>{m.is_moderator ? "سحب المشرف" : "🛡️ منح مشرف"}</button>
+                </div>
+              )}
+              {m.id === profile.id && <div className="muted">هذا حسابك أنت.</div>}
+            </div>
+          ))}
+        </div>
+      )}
+      {sub === "log" && isAdmin && (
+        <div>
+          {logs.length === 0 && <div className="empty">لا نشاط إداري بعد.</div>}
+          {logs.map((l) => (
+            <div className="card2" key={l.id}>
+              <b>{actionLabel(l.action)}</b> <span className="muted">بواسطة @{l.adminName}</span>
+              <div className="muted">{l.detail || ""} · {timeAgo(l.created_at)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {sub === "stats" && (
+        <div>
+          {stats && <div className="stats"><span>👥 {stats.u} مستخدم</span><span>📝 {stats.p} منشور</span><span>💬 {stats.c} تعليق</span></div>}
+          {growth && (
+            <div className="card2">
+              <b>📈 آخر 7 أيام</b>
+              {growth.days.map((d) => (<div key={d.key} className="muted">{d.key} — 📝 {d.p} منشور · 👥 {d.u} مستخدم جديد</div>))}
+              <b style={{ display: "block", marginTop: 10 }}>🏙️ أكثر المدن نشاطًا (آخر 500 منشور)</b>
+              {growth.topCities.map((c) => (<div key={c.id} className="muted">{cityName(c.id)} — {c.n} منشور</div>))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
