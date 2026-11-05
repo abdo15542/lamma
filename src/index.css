@@ -282,3 +282,19 @@ body.dark .themes button.on{border-color:#fff}
 /* حركات ناعمة */
 .post, .card2, .bottom button { transition: transform .18s ease, box-shadow .18s ease; }
 .post:hover { box-shadow: 0 2px 12px rgba(0,0,0,.06); }
+
+/* شاشة البداية — هوية ليبيا */
+.splash{min-height:100vh;min-height:100dvh;display:flex;align-items:center;justify-content:center;background:linear-gradient(160deg,#062e22 0%,#0b6b4f 55%,#084f3a 100%);color:#fff;text-align:center;padding:24px}
+.splash-inner{animation:splashUp .7s ease both}
+.splash-flag{width:180px;height:120px;margin:0 auto 22px;border-radius:14px;overflow:hidden;position:relative;box-shadow:0 10px 30px rgba(0,0,0,.35);background:linear-gradient(to bottom,#e70013 0 25%,#111 25% 75%,#007a3d 75% 100%);animation:splashPop .8s ease both}
+.splash-moon{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:64px;color:#fff;line-height:1}
+.splash-star{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:26px;color:#fff;transform:translate(16px,-4px)}
+.splash-title{font-size:56px;font-weight:800;margin:0;letter-spacing:1px}
+.splash-tag{margin:10px 0 0;opacity:.9;font-size:17px}
+.splash-dots{margin-top:28px;display:flex;gap:8px;justify-content:center}
+.splash-dots span{width:9px;height:9px;border-radius:50%;background:#fff;opacity:.5;animation:splashBlink 1.2s infinite}
+.splash-dots span:nth-child(2){animation-delay:.2s}
+.splash-dots span:nth-child(3){animation-delay:.4s}
+@keyframes splashUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes splashPop{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
+@keyframes splashBlink{0%,100%{opacity:.35}50%{opacity:1}}
