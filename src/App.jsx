@@ -15,6 +15,7 @@ const categories = [
 const PATHS = {
   home: "M3 10.5 12 3l9 7.5V21h-6v-6h-6v6H3z",
   comp: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm4.5 5.5-2.2 6.3-6.3 2.2 2.2-6.3z",
+  dots: "M5 12h.01M12 12h.01M19 12h.01",
   plus: "M12 5v14M5 12h14",
   heart: "M12 21s-7-4.6-9.5-9C.7 8.6 2.6 5 6 5c2 0 3.2 1 4 2.2C10.8 6 12 5 14 5c3.4 0 5.3 3.6 3.5 7-2.5 4.4-9.5 9-9.5 9z",
   comment: "M21 12a8 8 0 0 1-8 8H4l1.5-3A8 8 0 1 1 21 12z",
@@ -262,7 +263,7 @@ function Sheet({ title, onClose, children }) {
   );
 }
 
-const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, onReport, city, cat, saved, onSave, onPin, onMessage, canPin, onDelete, onOpenProfile, onZoom, onEdit, myVotes = new Set(), votePoll = () => {}, onSeller, rxnCount = {}, rxnMine = [], onReact = () => {} }) {
+const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike, onComments, onShare, onReport, city, cat, saved, onSave, onPin, onMessage, canPin, onDelete, onOpenProfile, onZoom, onEdit, myVotes = new Set(), votePoll = () => {}, onSeller, rxnCount = {}, rxnMine = [], onReact = () => {}, onMenu = () => {} }) {
   const [boom, setBoom] = useState(false);
   function dbl() { if (!voted) onLike(post.id); setBoom(true); setTimeout(() => setBoom(false), 800); }
   return (
@@ -271,12 +272,11 @@ const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike,
         <button className="pwho-btn" onClick={onOpenProfile}>
           {post.profiles?.avatar_url ? <img className="ava sm" style={{ objectFit: "cover" }} src={post.profiles.avatar_url} alt="" /> : <span className="ava sm">{avaLetter(post.profiles?.username)}</span>}
           <div className="pwho">
-            <b>{post.is_pinned && <span className="pinned-label">📌 مثبّت</span>}{post.profiles?.mood && <span className="mood">{post.profiles.mood}</span>}@{post.profiles?.username}{post.profiles?.is_admin && <span style={{ color: "#0f766e" }}> ✓</span>}</b>
-            <span>{city(post.city_id)} • {timeAgo(post.created_at)}</span>
+            <b>{post.is_pinned && <span className="pinned-label">📌 مثبّت</span>}{post.profiles?.mood && <span className="mood">{post.profiles.mood}</span>}{post.profiles?.username}{post.profiles?.is_admin && <span style={{ color: "#0095f6" }}> ✓</span>}</b>
+            <span>{city(post.city_id)}</span>
           </div>
         </button>
-        <CatBadge id={post.category} />
-        {post.price && <span className="badge2">💰 {post.price}</span>}
+        <button className="ibtn" onClick={onMenu} aria-label="خيارات"><Icon n="dots" /></button>
       </div>
       {post.image_url && (
         <div onDoubleClick={dbl} style={{ position: "relative" }}>
@@ -293,8 +293,8 @@ const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike,
             const pct = total ? Math.round((c / total) * 100) : 0;
             const mine = myVotes.has(o.id);
             return (
-              <button key={o.id} className="pollopt" onClick={() => votePoll(o.id, post.id)} style={{ display: "block", width: "100%", textAlign: "right", margin: "6px 0", padding: "8px 12px", borderRadius: 12, border: mine ? "2px solid #0f766e" : "1px solid #dbdbdb", background: "#fff", position: "relative", overflow: "hidden" }}>
-                <span style={{ position: "absolute", inset: 0, width: pct + "%", background: "rgba(15,118,110,.12)" }} />
+              <button key={o.id} className="pollopt" onClick={() => votePoll(o.id, post.id)} style={{ display: "block", width: "100%", textAlign: "right", margin: "6px 0", padding: "8px 12px", borderRadius: 12, border: mine ? "2px solid #0095f6" : "1px solid #dbdbdb", background: "#fff", position: "relative", overflow: "hidden" }}>
+                <span style={{ position: "absolute", inset: 0, width: pct + "%", background: "rgba(0,149,246,.12)" }} />
                 <span style={{ position: "relative" }}>{o.label} {mine && "✓"} <b style={{ float: "left" }}>{total > 0 ? pct + "%" : ""}</b></span>
               </button>
             );
@@ -313,18 +313,15 @@ const PostCard = memo(function PostCard({ post, voted, useful, comments, onLike,
         <button className={"ibtn " + (voted ? "liked liked-pop" : "")} onClick={() => onLike(post.id)}><Icon n="heart" f={voted} /></button>
         <button className="ibtn" onClick={onComments}><Icon n="comment" /></button>
         <button className="ibtn" onClick={onShare}><Icon n="send" /></button>
-        <button className="ibtn" onClick={onSave}><Icon n="mark" f={saved} /></button>
         <span className="sp" />
-        {onEdit && <button className="ibtn" onClick={onEdit}><Icon n="edit" /></button>}
-        {onDelete && <button className="ibtn" onClick={onDelete}><Icon n="trash" /></button>}
-        {canPin && <button className="ibtn" onClick={onPin}><Icon n="pin" f={post.is_pinned} /></button>}
-        {onMessage && <button className="ibtn" onClick={onMessage}><Icon n="mail" /></button>}
-        <button className="ibtn" onClick={onReport}><Icon n="flag" /></button>
+        <button className="ibtn" onClick={onSave}><Icon n="mark" f={saved} /></button>
       </div>
       <div className="pcap">
-        <b>{useful} مفيد</b> · <b>@{post.profiles?.username}</b> <b>{hashTags(post.title)}</b> — {hashTags(post.body)}
-        {onSeller && <div><button className="chip" style={{ marginTop: 6 }} onClick={onSeller}>🤝 تواصل مع البائع</button></div>}
-        {comments > 0 && <div className="muted">عرض كل التعليقات ({comments})</div>}
+        <div><b>{useful} إعجاب</b>{(post.category || post.price) && <span className="muted"> · {cat(post.category)}{post.price ? " · 💰 " + post.price : ""}</span>}</div>
+        <div><b>{post.profiles?.username}</b> {post.title && <b>{hashTags(post.title)}</b>} {post.title && post.body ? "— " : ""}{hashTags(post.body)}</div>
+        {onSeller && <div><button className="ig-link" onClick={onSeller}>🤝 تواصل مع البائع</button></div>}
+        {comments > 0 && <div className="muted" onClick={onComments} style={{ cursor: "pointer" }}>عرض كل التعليقات ({comments})</div>}
+        <div className="ig-time">{timeAgo(post.created_at)}</div>
       </div>
     </article>
   );
@@ -338,6 +335,7 @@ function Feed({ profile, cities }) {
   const [optimisticLiked, setOptimisticLiked] = useState(new Set());
   const [follows, setFollows] = useState([]);
   const [sheet, setSheet] = useState(null);
+  const [menuPost, setMenuPost] = useState(null);
   const [sheetLoading, setSheetLoading] = useState(false);
   const [rxnMine, setRxnMine] = useState([]);
   const [rxnCount, setRxnCount] = useState({});
@@ -877,7 +875,7 @@ function Feed({ profile, cities }) {
   const cardProps = (p) => ({
     post: p, voted: votedIds.has(p.id) || optimisticLiked.has(p.id), useful: usefulCount(p), comments: commentCount(p),
     onLike: toggleUseful, onComments: () => setSheet({ type: "comments", post: p }),
-    onShare: () => sharePost(p), onReport: () => setSheet({ type: "report", post: p }),
+    onShare: () => sharePost(p), onReport: () => setSheet({ type: "report", post: p }), onMenu: () => setMenuPost(p),
     saved: savedIds.has(p.id) || optimisticSaved.has(p.id), onSave: () => toggleSave(p),
     onPin: () => togglePin(p.id, p.is_pinned),
     onMessage: p.user_id !== profile.id ? () => openChatWith(p.user_id, p.profiles?.username) : null,
@@ -896,37 +894,40 @@ function Feed({ profile, cities }) {
       {!online && <div className="notice" style={{ background: "#fef2f2", color: "#991b1b", borderColor: "#fca5a5" }}>📴 لا يوجد اتصال بالإنترنت</div>}
       <header className="topbar2">
         <div className="logo">لَمّة</div>
-        <div style={{ display: "flex", gap: 6 }}>
-          <button className="ibtn" onClick={() => setSheet({ type: "mood" })}><Icon n="user" s={18} /></button>
-          <button className="ibtn" onClick={() => setSheet({ type: "search" })}><Icon n="search" /></button>
-          <button className="ibtn" onClick={() => { const d = document.body.classList.toggle("dark"); localStorage.setItem("lamma-dark", d ? "1" : "0"); }}><Icon n="moon" /></button>
+        <div style={{ display: "flex", gap: 2 }}>
+          <button className="ibtn" onClick={() => setTab("pulse")}><Icon n="comp" /></button>
           <button className="ibtn" onClick={openInbox} style={{ position: "relative" }}><Icon n="mail" />{unreadMsgs > 0 && <span className="nbadge">{unreadMsgs}</span>}</button>
           <button className="ibtn" onClick={openNotif} style={{ position: "relative" }}><Icon n="bell" />{unread > 0 && <span className="nbadge">{unread}</span>}</button>
           {isMod && <button className="ibtn" onClick={() => setTab("admin")}><Icon n="shield" /></button>}
-          <button className="ibtn" onClick={() => { if (confirmLogout) logout(); else { setConfirmLogout(true); flashNotice("اضغط مرة أخرى لتأكيد الخروج"); setTimeout(() => setConfirmLogout(false), 2500); } }}><Icon n="out" /></button>
         </div>
       </header>
       {notice && <div className="notice">{notice}</div>}
       <UpdateNotice />
       <CallBox profile={profile} />
+      {(tab === "home" || tab === "follows") && (
+        <div className="ig-feed-toggle">
+          <button className={tab === "home" ? "on" : ""} onClick={() => setTab("home")}>لك</button>
+          <button className={tab === "follows" ? "on" : ""} onClick={() => setTab("follows")}>المتابَعون</button>
+        </div>
+      )}
       {tab === "home" && (
         <div onTouchStart={ts} onTouchMove={tm} onTouchEnd={te}>
           <div className={"pull " + (pull > 10 ? "on" : "")}><Icon n="refresh" s={20} /></div>
           <div className="stories">
             <button className="story" onClick={() => setSheet({ type: "storynew" })}>
-              <span className="ring"><span className="ava" style={{ background: "#fff", color: "#0f766e", border: "2px dashed #0f766e" }}>+</span></span>
+              <span className="ring" style={{ background: "#fff" }}><span className="ava" style={{ background: "#fff", color: "#262626", border: "2px dashed #dbdbdb" }}>+</span></span>
               <span className="sname">قصتك</span>
             </button>
             {storyGroups.map((g) => (
               <button key={g.user} className="story" onClick={() => openStory(g)}>
-                <span className="ring" style={{ border: g.items.some((it) => !storySeen.has(it.id)) ? "2px solid #f59e0b" : undefined }}>
+                <span className={"ring" + (g.items.some((it) => !storySeen.has(it.id)) ? "" : " seen")}>
                   <span className="ava">{avaLetter(g.name)}</span>
                 </span>
                 <span className="sname">{g.name}</span>
               </button>
             ))}
           </div>
-          <div className="stories">
+          <div className="stories cities-row">
             {cities.map((c) => (
               <button key={c.id} className={"story " + (c.id === selectedCityId ? "on" : "")} onClick={() => setSelectedCityId(c.id)}>
                 <span className="ring"><span className="ava">{avaLetter(c.name)}</span></span>
@@ -995,7 +996,7 @@ function Feed({ profile, cities }) {
         </>
       )}
       {tab === "admin" && isMod && <Admin profile={profile} cities={cities} approvalOn={approvalOn} setApprovalOn={setApprovalOn} />}
-      {tab === "me" && <Me profile={profile} cities={cities} onInvite={shareApp} onSaves={() => openSavesWrap()} onStats={() => { loadMyStats(); setSheet({ type: "mystats" }); }} onEditBio={() => setSheet({ type: "bio" })} onMyPosts={() => openProfile(profile.id)} />}
+      {tab === "me" && <Me profile={profile} cities={cities} onInvite={shareApp} onSaves={() => openSavesWrap()} onStats={() => { loadMyStats(); setSheet({ type: "mystats" }); }} onEditBio={() => setSheet({ type: "bio" })} onMyPosts={() => openProfile(profile.id)} onLogout={() => { if (confirmLogout) logout(); else { setConfirmLogout(true); flashNotice("اضغط مرة أخرى لتأكيد الخروج"); setTimeout(() => setConfirmLogout(false), 2500); } }} />}
       {storyView && storyView.all[storyView.i] && (
         <div className="overlay" style={{ alignItems: "stretch" }} onClick={() => setStoryView((v) => (v && v.i < v.all.length - 1 ? { ...v, i: v.i + 1 } : null))}>
           <div style={{ position: "relative", width: "100%", height: "100%", background: "#000" }}>
@@ -1035,13 +1036,23 @@ function Feed({ profile, cities }) {
       )}
       {showTop && <button className="totop" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>⬆</button>}
       <nav className="bottom">
-        <button className={tab === "home" ? "on" : ""} onClick={() => setTab("home")}><Icon n="home" /></button>
-        <button className={tab === "video" ? "on" : ""} onClick={() => setTab("video")}><Icon n="vid" /></button>
-        <button className={tab === "pulse" ? "on" : ""} onClick={() => setTab("pulse")}><Icon n="comp" /></button>
+        <button className={tab === "home" ? "on" : ""} onClick={() => setTab("home")}><Icon n="home" f={tab === "home"} /></button>
+        <button onClick={() => setSheet({ type: "search" })}><Icon n="search" /></button>
         <button className="addbtn" onClick={() => { try { const d = JSON.parse(localStorage.getItem("lamma-draft") || "null"); if (d && !title && !body) { setTitle(d.t || ""); setBody(d.b || ""); } } catch (e2) {} setSheet({ type: "compose" }); }}><Icon n="plus" /></button>
-        <button className={tab === "follows" ? "on" : ""} onClick={() => setTab("follows")}><Icon n="heart" /></button>
-        <button className={tab === "me" ? "on" : ""} onClick={() => setTab("me")}><Icon n="user" /></button>
+        <button className={tab === "video" ? "on" : ""} onClick={() => setTab("video")}><Icon n="vid" f={tab === "video"} /></button>
+        <button className={tab === "me" ? "on" : ""} onClick={() => setTab("me")}>{profile.avatar_url ? <img className="me-ava" src={profile.avatar_url} alt="" /> : <Icon n="user" f={tab === "me"} />}</button>
       </nav>
+      {menuPost && (
+        <Sheet title={menuPost.profiles?.username || "خيارات"} onClose={() => setMenuPost(null)}>
+          {(() => { const cp = cardProps(menuPost); return (<>
+            {cp.onEdit && <button className="btn2" onClick={() => { setMenuPost(null); cp.onEdit(); }}>✏️ تعديل المنشور</button>}
+            {cp.onMessage && <button className="btn2" onClick={() => { setMenuPost(null); cp.onMessage(); }}>💬 مراسلة صاحب المنشور</button>}
+            {cp.canPin && <button className="btn2" onClick={() => { setMenuPost(null); cp.onPin(); }}>{menuPost.is_pinned ? "📌 إلغاء التثبيت" : "📌 تثبيت المنشور"}</button>}
+            {cp.onDelete && <button className="btn2" onClick={() => { const wasConfirm = delId === menuPost.id; cp.onDelete(); if (wasConfirm) setMenuPost(null); }} style={{ color: "#e11d48" }}>🗑 حذف المنشور</button>}
+            <button className="btn2" onClick={() => { setMenuPost(null); cp.onReport(); }}>🚩 إبلاغ عن المنشور</button>
+          </>); })()}
+        </Sheet>
+      )}
 
       {sheet && sheet.type === "notif" && (
         <Sheet title="الإشعارات" onClose={closeSheet}>
@@ -1484,7 +1495,7 @@ function Admin({ profile, cities, approvalOn, setApprovalOn }) {
   );
 }
 
-function Me({ profile, cities, onInvite, onSaves, onStats, onEditBio, onMyPosts }) {
+function Me({ profile, cities, onInvite, onSaves, onStats, onEditBio, onMyPosts, onLogout }) {
   const [me, setMe] = useState(profile);
   async function uploadAvatar(file) {
     const blob = await compressImg(file, 256);
@@ -1516,18 +1527,18 @@ function Me({ profile, cities, onInvite, onSaves, onStats, onEditBio, onMyPosts 
   return (
     <div>
             {notice && <div className="notice">{notice}</div>}
-      <div style={{ position: "relative" }}>
-        <div className="cover" style={{ backgroundImage: me.cover_url ? "url(" + me.cover_url + ")" : "linear-gradient(135deg,#0f766e,#134e4a)" }} />
-        <label className="chip" style={{ position: "absolute", top: 8, insetInlineStart: 8, background: "#fff" }}>🖼 غلاف<input type="file" accept="image/*" hidden onChange={(e) => e.target.files[0] && uploadCover(e.target.files[0])} /></label>
+      <div className="ig-head">
+        <label style={{ cursor: "pointer" }}>{me.avatar_url ? <img className="ig-ava" src={me.avatar_url} alt="" /> : <span className="ig-ava">{avaLetter(me.username)}</span>}<input type="file" accept="image/*" hidden onChange={(e) => e.target.files[0] && uploadAvatar(e.target.files[0])} /></label>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <b style={{ fontSize: 18 }}>{profile.username} {profile.is_admin ? "👑" : ""}</b>
+          <div className="muted">{cityName(profile.city_id)}</div>
+          {profile.bio && <div style={{ fontSize: 14, marginTop: 6, lineHeight: 1.5 }}>{profile.bio}</div>}
+        </div>
       </div>
-      <div className="mehead" style={{ marginTop: -46 }}>
-        {me.avatar_url ? <img className="ava" style={{ width: 84, height: 84, objectFit: "cover", border: "3px solid #fff" }} src={me.avatar_url} alt="" /> : <span className="ava" style={{ width: 84, height: 84, fontSize: 34 }}>{avaLetter(me.username)}</span>}
-        <label className="chip" style={{ background: "#fff" }}>📷 الشعار<input type="file" accept="image/*" hidden onChange={(e) => e.target.files[0] && uploadAvatar(e.target.files[0])} /></label>
-        <b style={{ fontSize: 18 }}>@{profile.username} {profile.is_admin ? "👑" : ""}</b>
-        <span className="muted">{cityName(profile.city_id)}</span>
-        {profile.bio && <div style={{ fontSize: 14, color: "#444", textAlign: "center", marginTop: 6 }}>{profile.bio}</div>}
+      <div className="ig-actions">
+        <button className="ig-btn" onClick={onEditBio}>تعديل الملف الشخصي</button>
+        <button className="ig-btn" onClick={onInvite}>مشاركة الملف</button>
       </div>
-      <div className="stats"><span>ليبي 100%</span><span>بدون إعلانات</span><span>مجتمع حقيقي</span></div>
       <div className="card2">
         <h3>🎨 اختر مظهر التطبيق</h3>
         <div className="themes">
@@ -1564,10 +1575,14 @@ function Me({ profile, cities, onInvite, onSaves, onStats, onEditBio, onMyPosts 
         <button className="btn2" onClick={onMyPosts}>📄 منشوراتي</button>
         <button className="btn2" onClick={onSaves}>🔖 محفوظاتي</button>
         <button className="btn2" onClick={onStats} style={{ marginTop: 8 }}>📊 إحصائياتي</button>
-        <button className="btn2" onClick={onEditBio} style={{ marginTop: 8 }}>✏️ تعديل السيرة</button>
+
       </div>
       <div className="card2">
         <button className="btn1" onClick={invite}>{copied ? "تم النسخ ✔" : "📤 دعوة جيرانك"}</button>
+      </div>
+      <div className="card2">
+        <button className="btn2" onClick={() => { const d = document.body.classList.toggle("dark"); localStorage.setItem("lamma-dark", d ? "1" : "0"); }}>🌙 الوضع الداكن</button>
+        <button className="btn2" onClick={onLogout} style={{ marginTop: 8, color: "#e11d48" }}>🚪 تسجيل الخروج</button>
       </div>
     </div>
   );
