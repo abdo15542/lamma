@@ -130,6 +130,9 @@ function Splash() {
   );
 }
 
+async function logAdmin(adminId, action, targetType, targetId, detail) {
+  try { await supabase.from("admin_logs").insert({ admin_id: adminId, action, target_type: targetType, target_id: targetId ? String(targetId) : null, detail: detail || null }); } catch (e) {}
+}
 function AppInner() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -159,6 +162,7 @@ function AppInner() {
   if (loading || (session && profileLoading) || !splashMin) return <Splash />;
   if (!session) return <Auth cities={cities} />;
   if (!profile) return <SetupProfile user={session.user} cities={cities} onDone={() => loadProfile(session.user.id)} />;
+  if (profile.is_banned) return (<div className="center"><div className="authcard"><h2>🚫 تم حظر حسابك</h2><p className="muted" style={{ textAlign: "center" }}>تم حظر هذا الحساب من إدارة لَمّة. إن كنت ترى أن الحظر خطأ، تواصل مع الإدارة.</p><button className="btn1" onClick={() => supabase.auth.signOut().then(() => window.location.reload())}>تسجيل الخروج</button></div></div>);
   return <Feed profile={profile} cities={cities} />;
 }
 
@@ -399,9 +403,11 @@ function Feed({ profile, cities }) {
   const [tour, setTour] = useState(localStorage.getItem("lamma-tour") !== "1");
   const [editBody, setEditBody] = useState("");
   let noticeTimer = null;
+  const isMod = profile.is_admin || profile.is_moderator;
+  const [approvalOn, setApprovalOn] = useState(true);
 
   useEffect(() => {
-    loadFollows(); loadUnread(); loadSaves(); loadMsgs(); loadBlocks();
+    loadFollows(); loadUnread(); loadSaves(); loadMsgs(); loadBlocks(); loadApproval();
     const t = setInterval(loadUnread, 30000);
     const t2 = setInterval(loadMsgs, 30000);
     return () => { clearInterval(t); clearInterval(t2); };
@@ -475,7 +481,7 @@ function Feed({ profile, cities }) {
     setSkel(true);
     try {
     const sel = "*, profiles!posts_user_id_fkey(username, is_admin, avatar_url, mood), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count), poll_options(id, label, position, poll_votes(count))";
-    let q = supabase.from("posts").select(sel).order("is_pinned", { ascending: false }).order("created_at", { ascending: false }).limit(100);
+    let q = supabase.from("posts").select(sel).eq("status", "approved").order("is_pinned", { ascending: false }).order("created_at", { ascending: false }).limit(100);
     if (tab === "home") q = q.eq("city_id", selectedCityId);
     if (catFilter) q = q.eq("category", catFilter);
     else if (tab === "follows") q = follows.length ? q.in("city_id", follows) : null;
@@ -522,7 +528,7 @@ function Feed({ profile, cities }) {
     const ids = (sv || []).map((x) => x.post_id);
     if (ids.length === 0) { setSvList([]); setSheetLoading(false); return; }
     const sel = "*, profiles!posts_user_id_fkey(username, is_admin, avatar_url, mood), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count), poll_options(id, label, position, poll_votes(count))";
-    const { data } = await supabase.from("posts").select(sel).in("id", ids).order("created_at", { ascending: false });
+    const { data } = await supabase.from("posts").select(sel).eq("status", "approved").in("id", ids).order("created_at", { ascending: false });
     setSvList(data || []); setSheetLoading(false);
   }
   async function loadMsgs() {
@@ -604,6 +610,7 @@ function Feed({ profile, cities }) {
     });
   }
   async function createPost() {
+    if (profile.muted_until && new Date(profile.muted_until) > new Date()) { setMessage("حسابك مكتوم مؤقتًا حتى " + new Date(profile.muted_until).toLocaleString("ar-LY")); return; }
     setBusy(true); setMessage("");
     let imageUrl = null;
     if (imageFile) {
@@ -613,14 +620,14 @@ function Feed({ profile, cities }) {
       if (ue) { setMessage("فشل رفع الصورة: " + ue.message); setBusy(false); return; }
       imageUrl = supabase.storage.from("post-images").getPublicUrl(path).data.publicUrl;
     }
-    const { data: newPost, error } = await supabase.from("posts").insert({ user_id: profile.id, city_id: selectedCityId, category, title, body, image_url: imageUrl, price: price || null }).select();
+    const { data: newPost, error } = await supabase.from("posts").insert({ user_id: profile.id, city_id: selectedCityId, category, title, body, image_url: imageUrl, price: price || null, status: approvalOn ? "pending" : "approved" }).select();
     if (error) setMessage("خطأ نشر: " + error.message);
     else {
       if (newPost && addPoll) {
         const opts = pollOpts.map((t, i) => ({ t: t.trim(), i })).filter((x) => x.t);
         if (opts.length >= 2) await supabase.from("poll_options").insert(opts.map((x) => ({ post_id: newPost.id, label: x.t, position: x.i })));
       }
-      setTitle(""); setBody(""); setImageFile(null); setImgPrev(null); setAddPoll(false); setPrice(""); try { localStorage.removeItem("lamma-draft"); } catch (e2) {} setPollOpts(["", "", "", ""]); closeSheet(); flashNotice("تم النشر بنجاح ✅"); loadPosts();
+      setTitle(""); setBody(""); setImageFile(null); setImgPrev(null); setAddPoll(false); setPrice(""); try { localStorage.removeItem("lamma-draft"); } catch (e2) {} setPollOpts(["", "", "", ""]); closeSheet(); flashNotice(approvalOn ? "منشورك بانتظار موافقة الإدارة ⏳" : "تم النشر بنجاح ✅"); loadPosts();
     }
     setBusy(false);
   }
@@ -643,6 +650,7 @@ function Feed({ profile, cities }) {
   async function addComment(postId) {
     const text = cText.trim();
     if (!text) return;
+    if (profile.muted_until && new Date(profile.muted_until) > new Date()) { flashNotice("حسابك مكتوم مؤقتًا — لا يمكنك التعليق الآن"); return; }
     await supabase.from("comments").insert({ post_id: postId, user_id: profile.id, body: text });
     const owner = posts.find((x) => x.id === postId)?.user_id || (sheet && sheet.post ? sheet.post.user_id : null);
     if (owner && owner !== profile.id) await supabase.from("notifications").insert({ user_id: owner, actor_id: profile.id, type: "comment", post_id: postId });
@@ -656,10 +664,12 @@ function Feed({ profile, cities }) {
   }
   async function deletePost(postId) {
     await supabase.from("posts").delete().eq("id", postId);
+    await logAdmin(profile.id, "delete_post", "post", postId, null);
     setDelId(null); flashNotice("تم حذف المنشور 🗑"); loadPosts();
   }
   async function togglePin(postId, current) {
     await supabase.from("posts").update({ is_pinned: !current, pinned_at: current ? null : new Date().toISOString() }).eq("id", postId);
+    await logAdmin(profile.id, current ? "unpin_post" : "pin_post", "post", postId, null);
     loadPosts();
   }
   async function toggleSave(post) {
@@ -688,7 +698,7 @@ function Feed({ profile, cities }) {
     if (!q || !q.trim()) { setSRes([]); setPeopleRes([]); return; }
     setSBusy(true);
     const term = "%" + q.trim() + "%";
-    const { data } = await supabase.from("posts").select("*, profiles!posts_user_id_fkey(username, avatar_url), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)").or("title.ilike." + term + ",body.ilike." + term).order("created_at", { ascending: false }).limit(20);
+    const { data } = await supabase.from("posts").select("*, profiles!posts_user_id_fkey(username, avatar_url), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)").eq("status", "approved").or("title.ilike." + term + ",body.ilike." + term).order("created_at", { ascending: false }).limit(20);
     const { data: ppl } = await supabase.from("profiles").select("id, username, avatar_url, city_id").ilike("username", term).limit(20);
     setSRes(data || []); setPeopleRes(ppl || []); setSBusy(false);
   }
@@ -700,7 +710,7 @@ function Feed({ profile, cities }) {
     setSheetLoading(true);
     const [pr, ps, cc] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", userId).maybeSingle(),
-      supabase.from("posts").select("*, profiles!posts_user_id_fkey(username, avatar_url), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)").eq("user_id", userId).order("created_at", { ascending: false }).limit(30),
+      supabase.from("posts").select("*, profiles!posts_user_id_fkey(username, avatar_url), useful_votes!useful_votes_post_id_fkey(count), comments!comments_post_id_fkey(count)").eq("user_id", userId).eq("status", "approved").order("created_at", { ascending: false }).limit(30),
       supabase.from("comments").select("*", { count: "exact", head: true }).eq("user_id", userId)
     ]);
     const [fc, fme, myf] = await Promise.all([
@@ -748,6 +758,9 @@ function Feed({ profile, cities }) {
   async function loadBlocks() {
     const { data } = await supabase.from("blocks").select("blocked_id").eq("user_id", profile.id);
     setBlockedIds(new Set((data || []).map((x) => x.blocked_id)));
+  }
+  async function loadApproval() {
+    try { const { data } = await supabase.from("admin_settings").select("value").eq("key", "post_approval").maybeSingle(); if (data) setApprovalOn(data.value === "true"); } catch (e) {}
   }
   async function toggleBlock(userId) {
     if (blockedIds.has(userId)) {
@@ -868,8 +881,8 @@ function Feed({ profile, cities }) {
     saved: savedIds.has(p.id) || optimisticSaved.has(p.id), onSave: () => toggleSave(p),
     onPin: () => togglePin(p.id, p.is_pinned),
     onMessage: p.user_id !== profile.id ? () => openChatWith(p.user_id, p.profiles?.username) : null,
-    canPin: profile.is_admin,
-    onDelete: (p.user_id === profile.id || profile.is_admin) ? () => { if (delId === p.id) deletePost(p.id); else { setDelId(p.id); flashNotice("اضغط مرة أخرى لتأكيد الحذف"); setTimeout(() => setDelId(null), 2500); } } : null,
+    canPin: isMod,
+    onDelete: (p.user_id === profile.id || isMod) ? () => { if (delId === p.id) deletePost(p.id); else { setDelId(p.id); flashNotice("اضغط مرة أخرى لتأكيد الحذف"); setTimeout(() => setDelId(null), 2500); } } : null,
     onOpenProfile: () => openProfile(p.user_id), onZoom: () => setSheet({ type: "zoom", src: p.image_url }),
     onEdit: p.user_id === profile.id ? () => { setEditTitle(p.title); setEditBody(p.body); setSheet({ type: "edit", post: p }); } : null,
     city: cityName, cat: categoryLabel,
@@ -889,7 +902,7 @@ function Feed({ profile, cities }) {
           <button className="ibtn" onClick={() => { const d = document.body.classList.toggle("dark"); localStorage.setItem("lamma-dark", d ? "1" : "0"); }}><Icon n="moon" /></button>
           <button className="ibtn" onClick={openInbox} style={{ position: "relative" }}><Icon n="mail" />{unreadMsgs > 0 && <span className="nbadge">{unreadMsgs}</span>}</button>
           <button className="ibtn" onClick={openNotif} style={{ position: "relative" }}><Icon n="bell" />{unread > 0 && <span className="nbadge">{unread}</span>}</button>
-          {profile.is_admin && <button className="ibtn" onClick={() => setTab("admin")}><Icon n="shield" /></button>}
+          {isMod && <button className="ibtn" onClick={() => setTab("admin")}><Icon n="shield" /></button>}
           <button className="ibtn" onClick={() => { if (confirmLogout) logout(); else { setConfirmLogout(true); flashNotice("اضغط مرة أخرى لتأكيد الخروج"); setTimeout(() => setConfirmLogout(false), 2500); } }}><Icon n="out" /></button>
         </div>
       </header>
@@ -942,7 +955,7 @@ function Feed({ profile, cities }) {
               {events.map((ev) => (
                 <div className="msg-item" key={ev.id}>
                   <div className="msg-name">{ev.title}<div className="muted" style={{ fontWeight: 400 }}>{new Date(ev.event_date).toLocaleString("ar-LY")}{ev.location ? " · " + ev.location : ""}</div>{ev.body && <div style={{ fontWeight: 400, fontSize: 13 }}>{ev.body}</div>}</div>
-                  {(ev.user_id === profile.id || profile.is_admin) && <button className="ibtn" onClick={() => deleteEvent(ev.id)}><Icon n="trash" s={16} /></button>}
+                  {(ev.user_id === profile.id || isMod) && <button className="ibtn" onClick={() => deleteEvent(ev.id)}><Icon n="trash" s={16} /></button>}
                 </div>
               ))}
             </div>
@@ -965,7 +978,7 @@ function Feed({ profile, cities }) {
                   <span className="ava sm">{avaLetter(v.profiles?.username)}</span>
                   <div className="pwho"><b>@{v.profiles?.username}</b><span>{timeAgo(v.created_at)} · 👁 {v.views || 0}</span></div>
                 </button>
-                {(v.user_id === profile.id || profile.is_admin) && <button className="ibtn" onClick={() => deleteVideo(v.id)}><Icon n="trash" s={18} /></button>}
+                {(v.user_id === profile.id || isMod) && <button className="ibtn" onClick={() => deleteVideo(v.id)}><Icon n="trash" s={18} /></button>}
               </div>
               <b>{v.title}</b>
               <div className="vwrap"><video src={v.video_url} controls playsInline preload="metadata" onPlay={() => bumpViews(v)} /></div>
@@ -981,7 +994,7 @@ function Feed({ profile, cities }) {
           {!skel && posts.filter((p) => !blockedIds.has(p.user_id)).map((p) => (<PostCard key={p.id} {...cardProps(p)} />))}
         </>
       )}
-      {tab === "admin" && profile.is_admin && <Admin />}
+      {tab === "admin" && isMod && <Admin profile={profile} cities={cities} approvalOn={approvalOn} setApprovalOn={setApprovalOn} />}
       {tab === "me" && <Me profile={profile} cities={cities} onInvite={shareApp} onSaves={() => openSavesWrap()} onStats={() => { loadMyStats(); setSheet({ type: "mystats" }); }} onEditBio={() => setSheet({ type: "bio" })} onMyPosts={() => openProfile(profile.id)} />}
       {storyView && storyView.all[storyView.i] && (
         <div className="overlay" style={{ alignItems: "stretch" }} onClick={() => setStoryView((v) => (v && v.i < v.all.length - 1 ? { ...v, i: v.i + 1 } : null))}>
@@ -1258,7 +1271,7 @@ function Pulse({ profile, cities, onOpen }) {
   const [cityBoard, setCityBoard] = useState([]);
   useEffect(() => { load(); }, []);
   async function load() {
-    const { data } = await supabase.from("posts").select("*, profiles!posts_user_id_fkey(username, avatar_url), useful_votes!useful_votes_post_id_fkey(count)").order("created_at", { ascending: false }).limit(100);
+    const { data } = await supabase.from("posts").select("*, profiles!posts_user_id_fkey(username, avatar_url), useful_votes!useful_votes_post_id_fkey(count)").eq("status", "approved").order("created_at", { ascending: false }).limit(100);
     const list = (data || []).map((p) => ({ ...p, vc: p.useful_votes?.[0]?.count || 0 })).filter((p) => p.vc > 0 && p.city_id !== profile.city_id).sort((a, b) => b.vc - a.vc).slice(0, 30);
     setItems(list);
     const cnt = {};
