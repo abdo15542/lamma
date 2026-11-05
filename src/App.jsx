@@ -1182,12 +1182,13 @@ function Feed({ profile, cities }) {
           {sheetLoading && skelRow}
           {!sheetLoading && profView && profView.pr && (
             <>
-              {profView.pr.cover_url && <div className="cover" style={{ backgroundImage: "url(" + profView.pr.cover_url + ")" }} />}
-              <div className="mehead">
-                {profView.pr.avatar_url ? <img className="ava" style={{ width: 72, height: 72, objectFit: "cover" }} src={profView.pr.avatar_url} alt="" /> : <span className="ava">{avaLetter(profView.pr.username)}</span>}
-                <b>@{profView.pr.username}</b>
-                <span className="muted">{cityName(profView.pr.city_id)} • عضو منذ {new Date(profView.pr.joined_at || Date.now()).toLocaleDateString("ar-LY")}</span>
-                {profView.pr.bio && <div style={{ fontSize: 14, color: "#444", textAlign: "center" }}>{profView.pr.bio}</div>}
+              <div className="ig-head">
+                {profView.pr.avatar_url ? <img className="ig-ava" src={profView.pr.avatar_url} alt="" /> : <span className="ig-ava">{avaLetter(profView.pr.username)}</span>}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <b style={{ fontSize: 18 }}>{profView.pr.username}</b>
+                  <div className="muted">{cityName(profView.pr.city_id)} • عضو منذ {new Date(profView.pr.joined_at || Date.now()).toLocaleDateString("ar-LY")}</div>
+                  {profView.pr.bio && <div style={{ fontSize: 14, marginTop: 6, lineHeight: 1.5 }}>{profView.pr.bio}</div>}
+                </div>
               </div>
               <div className="cityline" style={{ padding: "4px 0" }}>
                 <span className="muted">{followInfo?.followers || 0} متابع {followInfo?.followsMe && <span className="badge2">يتابعك</span>}</span>
