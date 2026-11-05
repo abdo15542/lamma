@@ -114,27 +114,49 @@ function LazyImage({ src, alt, className }) {
   );
 }
 
+function Splash() {
+  return (
+    <div className="splash">
+      <div className="splash-inner">
+        <div className="splash-flag" aria-hidden="true">
+          <span className="splash-moon">☾</span>
+          <span className="splash-star">★</span>
+        </div>
+        <h1 className="splash-title">لَمّة</h1>
+        <p className="splash-tag">لمّتنا تجمعنا • من ليبيا، إلى ليبيا</p>
+        <div className="splash-dots"><span /><span /><span /></div>
+      </div>
+    </div>
+  );
+}
+
 function AppInner() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [cities, setCities] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [splashMin, setSplashMin] = useState(false);
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => { setSession(data.session); setLoading(false); });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => { setSession(s); setLoading(false); });
     loadCities();
     return () => subscription.unsubscribe();
   }, []);
+  useEffect(() => { const t = setTimeout(() => setSplashMin(true), 1800); return () => clearTimeout(t); }, []);
   useEffect(() => { if (session?.user) loadProfile(session.user.id); else setProfile(null); }, [session]);
   async function loadCities() {
     const { data } = await supabase.from("cities").select("*").order("name", { ascending: true });
     setCities(data || []);
   }
   async function loadProfile(userId) {
-    const { data } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
-    setProfile(data || null);
+    setProfileLoading(true);
+    try {
+      const { data } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+      setProfile(data || null);
+    } finally { setProfileLoading(false); }
   }
-  if (loading) return <div className="center">جاري التحميل...</div>;
+  if (loading || (session && profileLoading) || !splashMin) return <Splash />;
   if (!session) return <Auth cities={cities} />;
   if (!profile) return <SetupProfile user={session.user} cities={cities} onDone={() => loadProfile(session.user.id)} />;
   return <Feed profile={profile} cities={cities} />;
